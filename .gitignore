@@ -1,0 +1,28 @@
+# Base de données locale
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Photos et fichiers locaux
+pending_photos/
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Environnements virtuels
+venv/
+env/
+.env
+
+# OS
+.DS_Store
+Thumbs.db
