@@ -6,6 +6,9 @@ from datetime import date, datetime
 from . import config, database
 from .ui_common import text_popup, numpad_popup, style_popup, confirm, error
 
+# Verrou global : une seule operation BLE a la fois (scan + scan = blocage BlueZ)
+_BLE_LOCK = threading.Lock()
+
 
 class ReceptionScreen(tk.Frame):
     def __init__(self, master, on_done):
@@ -140,7 +143,7 @@ class ReceptionScreen(tk.Frame):
                  fg=config.COLOR_FG, font=("DejaVu Sans", 40, "bold")
                  ).pack(pady=8)
 
-        state = {"temp": None, "closed": False}
+        state = {"temp": None, "closed": False, "reading": False}
 
         def set_temp(t):
             state["temp"] = t
@@ -154,36 +157,53 @@ class ReceptionScreen(tk.Frame):
                                "Utilisez la saisie manuelle.")
                 status.config(fg=config.COLOR_WARNING)
                 return
+            if state.get("reading"):
+                return  # lecture deja en cours pour ce popup
+            state["reading"] = True
             status_var.set("Recherche du pistolet...\n"
                            "Visez le produit et APPUYEZ PLUSIEURS FOIS sur la "
                            "gâchette jusqu'à la mesure.")
             status.config(fg=config.COLOR_WARNING)
 
+            # Le thread BLE ne touche JAMAIS a l'UI (Tk n'est pas thread-safe) :
+            # il depose son resultat dans box, et l'UI vient le lire par polling.
+            box = {}
+
             def do():
-                from . import ble_thermo
-                try:
-                    temp = ble_thermo.read_temperature(mac, timeout=45.0)
-                    err = None
-                except Exception as e:
-                    temp, err = None, str(e)
+                with _BLE_LOCK:
+                    if state["closed"]:
+                        box["done"] = True
+                        return
+                    from . import ble_thermo
+                    try:
+                        box["temp"] = ble_thermo.read_temperature(mac, timeout=45.0)
+                    except Exception as e:
+                        box["err"] = str(e)
+                box["done"] = True
+
+            def poll():
                 if state["closed"]:
                     return
-                def apply():
-                    if temp is not None:
-                        set_temp(temp)
-                        status_var.set("✓ Mesure reçue — vérifiez puis enregistrez")
-                        status.config(fg=config.COLOR_SUCCESS)
-                    elif err:
-                        status_var.set(f"✗ Connexion impossible : {err}\n"
-                                       "Pistolet allumé et à portée ?")
-                        status.config(fg=config.COLOR_DANGER)
-                    else:
-                        status_var.set("✗ Aucune mesure reçue — gâchette appuyée ?\n"
-                                       "Relisez ou saisissez manuellement.")
-                        status.config(fg=config.COLOR_DANGER)
-                top.after(0, apply)
+                if not box.get("done"):
+                    top.after(200, poll)
+                    return
+                state["reading"] = False
+                temp, err = box.get("temp"), box.get("err")
+                if temp is not None:
+                    set_temp(temp)
+                    status_var.set("✓ Mesure reçue — vérifiez puis enregistrez")
+                    status.config(fg=config.COLOR_SUCCESS)
+                elif err:
+                    status_var.set(f"✗ Connexion impossible : {err}\n"
+                                   "Pistolet allumé et à portée ?")
+                    status.config(fg=config.COLOR_DANGER)
+                else:
+                    status_var.set("✗ Aucune mesure reçue — gâchette appuyée ?\n"
+                                   "Relisez ou saisissez manuellement.")
+                    status.config(fg=config.COLOR_DANGER)
 
             threading.Thread(target=do, daemon=True).start()
+            top.after(200, poll)
 
         def manual():
             v = numpad_popup(top, "Température (°C)")
@@ -327,32 +347,46 @@ class ReceptionScreen(tk.Frame):
                               wraplength=430)
             st_lbl.pack(pady=2)
 
+            detect_state = {"running": False}
+
             def detect():
-                st_var.set("Recherche... allumez le pistolet en mode Bluetooth (max 15 s)")
+                if detect_state["running"]:
+                    return
+                detect_state["running"] = True
+                st_var.set("Recherche... appuyez sur la gâchette du pistolet (max 15 s)")
                 st_lbl.config(fg=config.COLOR_WARNING)
+                box = {}
 
                 def do():
-                    from . import ble_thermo
-                    try:
-                        found = ble_thermo.find_thermometer()
-                    except Exception as e:
-                        found, err = None, str(e)
+                    with _BLE_LOCK:
+                        from . import ble_thermo
+                        try:
+                            box["found"] = ble_thermo.find_thermometer()
+                        except Exception as e:
+                            box["err"] = str(e)
+                    box["done"] = True
+
+                def poll():
+                    if not cfg.winfo_exists():
+                        return
+                    if not box.get("done"):
+                        cfg.after(200, poll)
+                        return
+                    detect_state["running"] = False
+                    found, err = box.get("found"), box.get("err")
+                    if found:
+                        mac, name = found
+                        database.set_meta("reception_thermo_mac", mac.lower())
+                        mac_var.set(mac.lower())
+                        st_var.set(f"✓ Détecté : {name}")
+                        st_lbl.config(fg=config.COLOR_SUCCESS)
                     else:
-                        err = None
-                    def apply():
-                        if found:
-                            mac, name = found
-                            database.set_meta("reception_thermo_mac", mac.lower())
-                            mac_var.set(mac.lower())
-                            st_var.set(f"✓ Détecté : {name}")
-                            st_lbl.config(fg=config.COLOR_SUCCESS)
-                        else:
-                            st_var.set(f"✗ {err}" if err else
-                                       "✗ Pistolet non trouvé — vérifiez qu'il est allumé")
-                            st_lbl.config(fg=config.COLOR_DANGER)
-                    cfg.after(0, apply)
+                        st_var.set(f"✗ {err}" if err else
+                                   "✗ Pistolet non trouvé — vérifiez qu'il est allumé")
+                        st_lbl.config(fg=config.COLOR_DANGER)
 
                 threading.Thread(target=do, daemon=True).start()
+                cfg.after(200, poll)
 
             def manual():
                 cur = database.get_meta("reception_thermo_mac", "")
