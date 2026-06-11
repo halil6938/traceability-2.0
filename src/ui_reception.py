@@ -94,9 +94,21 @@ class ReceptionScreen(tk.Frame):
             tk.Label(line, text=r["supplier_name"], bg=config.COLOR_BG,
                      fg=config.COLOR_FG, font=config.FONT_SMALL, anchor="w"
                      ).pack(side="left", padx=4, expand=True, fill="x")
+            tk.Button(line, text="🗑", font=config.FONT_SMALL,
+                      bg=config.COLOR_DANGER, fg="white", bd=0, width=3,
+                      command=lambda x=r: self._delete_reception(x)
+                      ).pack(side="right", padx=(4, 6), pady=2)
             tk.Label(line, text=f"{r['temperature']:.1f}°C", bg=config.COLOR_BG,
                      fg=config.COLOR_SUCCESS, font=config.FONT_SMALL
                      ).pack(side="right", padx=6)
+
+    def _delete_reception(self, r):
+        heure = datetime.fromisoformat(r["created_at"]).strftime("%H:%M")
+        if confirm(self, "Supprimer",
+                   f"Supprimer le relevé {r['supplier_name']} "
+                   f"de {heure} ({r['temperature']:.1f}°C) ?"):
+            database.delete_reception(r["id"])
+            self._render_today()
 
     # --- mesure ---
 

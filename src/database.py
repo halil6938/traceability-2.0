@@ -249,6 +249,12 @@ def save_reception(supplier_id: int, temperature: float):
         )
 
 
+def delete_reception(reception_id: int):
+    """Supprime un releve de reception."""
+    with connect() as c:
+        c.execute("DELETE FROM receptions WHERE id = ?", (reception_id,))
+
+
 def receptions_on(day: date):
     """Receptions d'une journee, plus recentes en premier."""
     with connect() as c:
