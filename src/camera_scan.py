@@ -61,11 +61,20 @@ class CameraScanScreen(tk.Frame):
             pass  # si le controle n'est pas supporte, on ignore
 
     def _enable_autofocus_picamera(self):
-        """Active l'autofocus continu si la camera le supporte (Camera v3,
-        Arducam AF, modeles generiques...)."""
+        """Regle la mise au point. Module AF (OV5647-AF, Camera v3...) :
+        - FOCUS_DISTANCE_CM > 0 : focus fige a cette distance (LensPosition,
+          en dioptries = 100/cm) — fiable pour un montage a distance fixe ;
+        - sinon : autofocus continu si le pilote l'expose (AfMode).
+        Necessite dtoverlay=ov5647,vcm dans /boot/firmware/config.txt."""
         try:
-            from libcamera import controls
-            self.picam.set_controls({"AfMode": controls.AfModeEnum.Continuous})
+            ctrls = self.picam.camera_controls
+            if "LensPosition" in ctrls and config.FOCUS_DISTANCE_CM:
+                lp = 100.0 / config.FOCUS_DISTANCE_CM
+                lo, hi = ctrls["LensPosition"][0], ctrls["LensPosition"][1]
+                self.picam.set_controls({"LensPosition": max(lo, min(hi, lp))})
+            elif "AfMode" in ctrls:
+                from libcamera import controls
+                self.picam.set_controls({"AfMode": controls.AfModeEnum.Continuous})
         except Exception:
             pass  # camera a focale fixe : on ignore
 
@@ -124,11 +133,14 @@ class CameraScanScreen(tk.Frame):
         self.picam.start()
         self._set_full_fov()
         self._enable_autofocus_picamera()
-        # Declencher un cycle d'autofocus complet avant la photo (cameras AF)
-        try:
-            self.picam.autofocus_cycle()
-        except Exception:
-            time.sleep(0.8)  # focale fixe : on laisse juste l'expo se stabiliser
+        if config.FOCUS_DISTANCE_CM and "LensPosition" in self.picam.camera_controls:
+            time.sleep(0.8)  # focus fige : laisser expo + lentille se stabiliser
+        else:
+            # Declencher un cycle d'autofocus complet avant la photo (cameras AF)
+            try:
+                self.picam.autofocus_cycle()
+            except Exception:
+                time.sleep(0.8)  # focale fixe : laisser l'expo se stabiliser
         arr = self.picam.capture_array()
         # Appliquer la rotation a la photo finale aussi
         if config.CAMERA_ROTATION != 0:

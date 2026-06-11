@@ -17,6 +17,9 @@ SCREEN_H = 480
 CAMERA_RESOLUTION = (1640, 1232)  # capture haute qualite (ratio 4:3 natif Pi Camera v2)
 PREVIEW_RESOLUTION = (640, 480)   # preview paysage
 CAMERA_ROTATION = 180             # rotation si camera montee de cote : 0, 90, 180 ou 270
+FOCUS_DISTANCE_CM = 20            # distance camera-ticket ; mise au point figee
+                                  # a cette distance (module AF type OV5647-AF).
+                                  # Mettre 0 pour laisser l'autofocus continu.
 RECT_STABLE_FRAMES = 8            # frames consecutifs avec rectangle detecte avant capture
 RECT_MIN_AREA_RATIO = 0.08        # aire min du rectangle / aire frame
 
