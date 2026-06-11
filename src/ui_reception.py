@@ -150,7 +150,7 @@ class ReceptionScreen(tk.Frame):
         def read_ble():
             mac = database.get_meta("reception_thermo_mac", "")
             if not mac:
-                status_var.set("⚠ Aucun thermomètre configuré (⚙ Fournisseurs)\n"
+                status_var.set("⚠ Aucun pistolet configuré (⚙ Fournisseurs)\n"
                                "Utilisez la saisie manuelle.")
                 status.config(fg=config.COLOR_WARNING)
                 return
@@ -314,7 +314,7 @@ class ReceptionScreen(tk.Frame):
             cy = (config.SCREEN_H - ch) // 2
             cfg.geometry(f"{cw}x{ch}+{cx}+{cy}")
 
-            tk.Label(cfg, text="Thermomètre Bluetooth", bg=config.COLOR_BG,
+            tk.Label(cfg, text="Pistolet Bluetooth", bg=config.COLOR_BG,
                      fg=config.COLOR_FG, font=config.FONT_BIG).pack(pady=(12, 2))
             mac_var = tk.StringVar(
                 value=database.get_meta("reception_thermo_mac", "") or "(non configuré)")
@@ -356,7 +356,7 @@ class ReceptionScreen(tk.Frame):
 
             def manual():
                 cur = database.get_meta("reception_thermo_mac", "")
-                mac = text_popup(cfg, "MAC du thermomètre BLE", initial=cur)
+                mac = text_popup(cfg, "MAC du pistolet BLE", initial=cur)
                 if mac:
                     database.set_meta("reception_thermo_mac", mac.strip().lower())
                     mac_var.set(mac.strip().lower())
@@ -376,7 +376,7 @@ class ReceptionScreen(tk.Frame):
         tk.Button(bottom, text="+ Ajouter", font=config.FONT_MED,
                   bg=config.COLOR_PRIMARY, fg="white", bd=0, padx=12, pady=8,
                   command=add).pack(side="left", expand=True, fill="x", padx=3)
-        tk.Button(bottom, text="🌡 Thermomètre BLE", font=config.FONT_MED,
+        tk.Button(bottom, text="🌡 Pistolet BLE", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=12, pady=8,
                   command=config_thermo).pack(side="right", expand=True, fill="x", padx=3)
 

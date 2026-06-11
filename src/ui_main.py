@@ -202,17 +202,17 @@ class MainMenu(tk.Frame):
         grid.columnconfigure(2, weight=1)
         grid.rowconfigure(0, weight=1)
 
-        self._big_card(grid, "📷", "Scan ticket",
-                       "Prendre une photo automatique",
-                       config.COLOR_PRIMARY, self.app.show_scan
+        self._big_card(grid, "📦", "Réception",
+                       "Température des produits livrés",
+                       config.COLOR_WARNING, self.app.show_reception
                        ).grid(row=0, column=0, sticky="nsew", padx=8, pady=4)
         self._big_card(grid, "🌡", "Relevé de température",
                        "Saisir les temperatures du jour",
                        config.COLOR_SUCCESS, self.app.show_temperature
                        ).grid(row=0, column=1, sticky="nsew", padx=8, pady=4)
-        self._big_card(grid, "📦", "Réception",
-                       "Température des produits livrés",
-                       config.COLOR_WARNING, self.app.show_reception
+        self._big_card(grid, "📷", "Scan ticket",
+                       "Prendre une photo automatique",
+                       config.COLOR_PRIMARY, self.app.show_scan
                        ).grid(row=0, column=2, sticky="nsew", padx=8, pady=4)
 
         # Bas : historique + parametres
