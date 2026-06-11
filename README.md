@@ -1,11 +1,12 @@
-# Traceability
+# Traceability 2.0
 
-Application de traçabilité pour Raspberry Pi 3 (écran tactile 5" 800×480) :
+Application de traçabilité pour Raspberry Pi 3 (écran tactile 5" 800×480, **paysage**) :
 
 - 📷 **Scan ticket** : détection auto d'étiquettes blanches sur fond contrasté, capture automatique.
 - 🌡 **Relevés de température** : saisie tactile quotidienne par appareil (frigo/congélateur) avec alerte hors seuils.
-- 📊 **Historique** mensuel consultable et modifiable.
-- 📄 **Export PDF** par mois sur clé USB.
+- 📦 **Réception** : relevé de température des produits livrés par fournisseur, via thermomètre Bluetooth (pistolet IR HoldPeak HP-985C-APP) ou saisie manuelle.
+- 📊 **Historique** mensuel consultable et modifiable (tickets, températures, réceptions).
+- 📄 **Export PDF** par mois sur clé USB (températures + réceptions).
 - 🗑 **Purge auto** des photos > 6 mois.
 
 ## Architecture
@@ -22,10 +23,13 @@ traceability/
 │   ├── camera_scan.py        # preview + détection rectangle + capture
 │   ├── ui_common.py          # widgets + clavier tactile
 │   ├── ui_setup.py           # wizard premier lancement
+│   ├── ble_thermo.py         # pistolet IR HoldPeak HP-985C-APP (BLE)
 │   ├── ui_main.py            # menu principal + routeur
 │   ├── ui_temperature.py     # saisie du jour
+│   ├── ui_reception.py       # réception fournisseurs + lecture pistolet
 │   ├── ui_history.py         # tableau mensuel + export
 │   └── ui_settings.py        # gestion appareils
+├── tools/                    # outils de diagnostic BLE (ble_e2e.py, ...)
 ├── requirements.txt
 ├── install.sh
 └── traceability.service

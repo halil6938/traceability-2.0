@@ -43,6 +43,23 @@ def init_db():
             )
         """)
         c.execute("""
+            CREATE TABLE IF NOT EXISTS suppliers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                position INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS receptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                supplier_id INTEGER NOT NULL,
+                temperature REAL NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(supplier_id) REFERENCES suppliers(id) ON DELETE CASCADE
+            )
+        """)
+        c.execute("""
             CREATE TABLE IF NOT EXISTS ble_sensors (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 mac TEXT NOT NULL UNIQUE,
@@ -191,6 +208,71 @@ def remove_pending_photo(photo_id: int):
 def remove_pending_photo_by_path(local_path: str):
     with connect() as c:
         c.execute("DELETE FROM pending_photos WHERE local_path=?", (local_path,))
+
+
+# ---------- Fournisseurs ----------
+
+def list_suppliers():
+    with connect() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT * FROM suppliers ORDER BY position, name"
+        ).fetchall()]
+
+
+def add_supplier(name: str):
+    with connect() as c:
+        pos = c.execute("SELECT COALESCE(MAX(position), 0) + 1 FROM suppliers").fetchone()[0]
+        c.execute(
+            "INSERT INTO suppliers(name, position, created_at) VALUES (?,?,?)",
+            (name.strip(), pos, datetime.now().isoformat()),
+        )
+
+
+def update_supplier(supplier_id: int, name: str):
+    with connect() as c:
+        c.execute("UPDATE suppliers SET name=? WHERE id=?", (name.strip(), supplier_id))
+
+
+def delete_supplier(supplier_id: int):
+    with connect() as c:
+        c.execute("DELETE FROM suppliers WHERE id=?", (supplier_id,))
+
+
+# ---------- Receptions ----------
+
+def save_reception(supplier_id: int, temperature: float):
+    """Enregistre un releve de reception (plusieurs possibles par jour)."""
+    with connect() as c:
+        c.execute(
+            "INSERT INTO receptions(supplier_id, temperature, created_at) VALUES (?,?,?)",
+            (supplier_id, temperature, datetime.now().isoformat()),
+        )
+
+
+def receptions_on(day: date):
+    """Receptions d'une journee, plus recentes en premier."""
+    with connect() as c:
+        rows = c.execute(
+            """SELECT r.*, s.name AS supplier_name
+               FROM receptions r JOIN suppliers s ON s.id = r.supplier_id
+               WHERE r.created_at BETWEEN ? AND ?
+               ORDER BY r.created_at DESC""",
+            (day.isoformat(), day.isoformat() + "T23:59:59"),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def receptions_in_range(start: date, end: date):
+    """Receptions entre start et end inclus, plus recentes en premier."""
+    with connect() as c:
+        rows = c.execute(
+            """SELECT r.*, s.name AS supplier_name
+               FROM receptions r JOIN suppliers s ON s.id = r.supplier_id
+               WHERE r.created_at BETWEEN ? AND ?
+               ORDER BY r.created_at DESC""",
+            (start.isoformat(), end.isoformat() + "T23:59:59"),
+        ).fetchall()
+        return [dict(r) for r in rows]
 
 
 # ---------- Capteurs BLE ----------

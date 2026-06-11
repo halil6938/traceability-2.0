@@ -1,5 +1,5 @@
-"""Export PDF des releves de temperature par mois."""
-from datetime import date
+"""Export PDF des releves de temperature et receptions par mois."""
+from datetime import date, datetime
 from pathlib import Path
 from calendar import monthrange
 
@@ -77,6 +77,32 @@ def export_month_pdf(year: int, month: int) -> Path | None:
     story.append(Paragraph(
         "Cellules rouges : hors seuils. Cellules vides : relevé manquant.",
         styles["Italic"]))
+
+    # --- Section receptions ---
+    receptions = database.receptions_in_range(start, end)
+    if receptions:
+        story.append(Spacer(1, 20))
+        story.append(Paragraph(
+            f"<b>Réceptions — {month:02d}/{year}</b>", styles["Heading2"]))
+        story.append(Spacer(1, 6))
+
+        rdata = [["Date", "Heure", "Fournisseur", "Température (°C)"]]
+        for r in reversed(receptions):  # ordre chronologique
+            dt = datetime.fromisoformat(r["created_at"])
+            rdata.append([dt.strftime("%d/%m/%Y"), dt.strftime("%H:%M"),
+                          r["supplier_name"], f"{r['temperature']:g}"])
+
+        rt = Table(rdata, colWidths=[90, 60, 300, 110], repeatRows=1)
+        rt.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f59e0b")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("ALIGN", (3, 1), (3, -1), "CENTER"),
+            ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ]))
+        story.append(rt)
 
     doc.build(story)
     return out_path

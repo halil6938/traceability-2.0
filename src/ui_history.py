@@ -1,6 +1,6 @@
-"""Ecran historique : choix Tickets (photos) ou Temperatures."""
+"""Ecran historique : Tickets (photos), Temperatures ou Receptions."""
 import tkinter as tk
-from datetime import date
+from datetime import date, datetime
 from calendar import monthrange
 from . import config, database, pdf_export
 from .ui_common import make_button, numpad_popup, info, error, confirm
@@ -32,8 +32,9 @@ class HistoryScreen(tk.Frame):
         grid = tk.Frame(self, bg=config.COLOR_BG)
         grid.pack(fill="both", expand=True, padx=20, pady=20)
         grid.columnconfigure(0, weight=1)
+        grid.columnconfigure(1, weight=1)
+        grid.columnconfigure(2, weight=1)
         grid.rowconfigure(0, weight=1)
-        grid.rowconfigure(1, weight=1)
 
         self._big_card(grid, "📷", "Tickets",
                        "Consulter les photos de tickets",
@@ -42,7 +43,11 @@ class HistoryScreen(tk.Frame):
         self._big_card(grid, "🌡", "Temperatures",
                        "Tableau mensuel des releves",
                        config.COLOR_SUCCESS, self._show_temperatures
-                       ).grid(row=1, column=0, sticky="nsew", padx=8, pady=8)
+                       ).grid(row=0, column=1, sticky="nsew", padx=8, pady=8)
+        self._big_card(grid, "📦", "Réceptions",
+                       "Relevés des produits livrés",
+                       config.COLOR_WARNING, self._show_receptions
+                       ).grid(row=0, column=2, sticky="nsew", padx=8, pady=8)
 
     def _big_card(self, parent, icon, title, subtitle, color, command):
         card = tk.Frame(parent, bg=color, cursor="hand2")
@@ -50,9 +55,9 @@ class HistoryScreen(tk.Frame):
         tk.Label(card, text=icon, bg=color, fg="white",
                  font=("DejaVu Sans", 48)).pack(pady=(20, 0))
         tk.Label(card, text=title, bg=color, fg="white",
-                 font=config.FONT_BIG).pack()
+                 font=config.FONT_BIG, wraplength=220).pack()
         tk.Label(card, text=subtitle, bg=color, fg="white",
-                 font=config.FONT_SMALL).pack(pady=(4, 0))
+                 font=config.FONT_SMALL, wraplength=220).pack(pady=(4, 0))
         for w in card.winfo_children():
             w.bind("<Button-1>", lambda e: command())
         return card
@@ -66,6 +71,11 @@ class HistoryScreen(tk.Frame):
         self.destroy()
         TemperatureHistoryScreen(self.master,
                                  lambda: HistoryScreen(self.master, self.on_done))
+
+    def _show_receptions(self):
+        self.destroy()
+        ReceptionHistoryScreen(self.master,
+                               lambda: HistoryScreen(self.master, self.on_done))
 
     def _back(self):
         self.destroy()
@@ -374,6 +384,118 @@ class TemperatureHistoryScreen(tk.Frame):
             return
         database.save_reading(device["id"], day, val)
         self._render()
+
+    def _export(self):
+        try:
+            path = pdf_export.export_month_pdf(self.year, self.month)
+        except Exception as e:
+            error(self, "Erreur export", str(e))
+            return
+        if path is None:
+            error(self, "USB absente", "Branchez une cle USB pour exporter.")
+            return
+        info(self, "Export OK", f"Fichier enregistre :\n{path.name}")
+
+    def _back(self):
+        self.destroy()
+        self.on_done()
+
+
+# ---------------------------------------------------------------------------
+# Liste des receptions
+# ---------------------------------------------------------------------------
+
+class ReceptionHistoryScreen(tk.Frame):
+    """Liste mensuelle des releves de reception (date, fournisseur, temp)."""
+
+    def __init__(self, master, on_done):
+        super().__init__(master, bg=config.COLOR_BG)
+        self.on_done = on_done
+        self.pack(fill="both", expand=True)
+
+        today = date.today()
+        self.year = today.year
+        self.month = today.month
+
+        header = tk.Frame(self, bg=config.COLOR_BG)
+        header.pack(fill="x", padx=10, pady=6)
+        tk.Button(header, text="← Retour", font=config.FONT_MED,
+                  bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4,
+                  command=self._back).pack(side="left")
+        self.title_lbl = tk.Label(header, text="", bg=config.COLOR_BG,
+                                  fg=config.COLOR_FG, font=config.FONT_MED)
+        self.title_lbl.pack(side="left", padx=8)
+        tk.Button(header, text="Export PDF", font=config.FONT_MED,
+                  bg=config.COLOR_SUCCESS, fg="white", bd=0, padx=10, pady=4,
+                  command=self._export).pack(side="right", padx=4)
+
+        nav = tk.Frame(self, bg=config.COLOR_BG)
+        nav.pack(fill="x", padx=10)
+        tk.Button(nav, text="◀ Mois precedent", font=config.FONT_MED,
+                  bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4,
+                  command=self._prev_month).pack(side="left")
+        tk.Button(nav, text="Mois suivant ▶", font=config.FONT_MED,
+                  bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4,
+                  command=self._next_month).pack(side="right")
+
+        container = tk.Frame(self, bg=config.COLOR_BG)
+        container.pack(fill="both", expand=True, padx=10, pady=6)
+        canvas = tk.Canvas(container, bg=config.COLOR_BG, highlightthickness=0)
+        sb = tk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        self.list_frame = tk.Frame(canvas, bg=config.COLOR_BG)
+        self.list_frame.bind("<Configure>",
+                             lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=self.list_frame, anchor="nw",
+                             width=config.SCREEN_W - 40)
+        canvas.configure(yscrollcommand=sb.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+
+        self._render()
+
+    def _prev_month(self):
+        self.month -= 1
+        if self.month < 1:
+            self.month = 12
+            self.year -= 1
+        self._render()
+
+    def _next_month(self):
+        self.month += 1
+        if self.month > 12:
+            self.month = 1
+            self.year += 1
+        self._render()
+
+    def _render(self):
+        self.title_lbl.config(
+            text=f"Réceptions {MONTHS[self.month-1]} {self.year}")
+        for w in self.list_frame.winfo_children():
+            w.destroy()
+
+        start = date(self.year, self.month, 1)
+        end = date(self.year, self.month, monthrange(self.year, self.month)[1])
+        receptions = database.receptions_in_range(start, end)
+
+        if not receptions:
+            tk.Label(self.list_frame, text="(aucune réception ce mois)",
+                     bg=config.COLOR_BG, fg=config.COLOR_MUTED,
+                     font=config.FONT_MED).pack(pady=30)
+            return
+
+        for r in receptions:
+            dt = datetime.fromisoformat(r["created_at"])
+            row = tk.Frame(self.list_frame, bg=config.COLOR_CARD)
+            row.pack(fill="x", pady=2)
+            tk.Label(row, text=dt.strftime("%d/%m  %H:%M"), bg=config.COLOR_CARD,
+                     fg=config.COLOR_MUTED, font=config.FONT_MED, width=12,
+                     anchor="w").pack(side="left", padx=8, pady=6)
+            tk.Label(row, text=r["supplier_name"], bg=config.COLOR_CARD,
+                     fg=config.COLOR_FG, font=config.FONT_MED, anchor="w"
+                     ).pack(side="left", padx=4, expand=True, fill="x")
+            tk.Label(row, text=f"{r['temperature']:.1f}°C", bg=config.COLOR_CARD,
+                     fg=config.COLOR_SUCCESS, font=config.FONT_MED
+                     ).pack(side="right", padx=12)
 
     def _export(self):
         try:

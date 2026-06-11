@@ -21,7 +21,8 @@ except ImportError:
     HAS_BLEAK = False
 
 
-async def _scan_async(targets: set) -> dict:
+async def _scan_async(targets: set, temp_min: float = TEMP_MIN,
+                      temp_max: float = TEMP_MAX) -> dict:
     results = {}
 
     def callback(device, adv):
@@ -31,7 +32,7 @@ async def _scan_async(targets: set) -> dict:
         if not data or len(data) < 12:
             return
         temp = struct.unpack_from('<H', data, 10)[0] / 16.0
-        if not (TEMP_MIN <= temp <= TEMP_MAX):
+        if not (temp_min <= temp <= temp_max):
             logger.warning("BLE trame aberrante ignoree : %s -> %.2f C", device.address, temp)
             return
         results[device.address.lower()] = round(temp, 2)
@@ -49,10 +50,11 @@ async def _scan_async(targets: set) -> dict:
     return results
 
 
-def read_temperatures(macs: list) -> dict:
+def read_temperatures(macs: list, temp_min: float = TEMP_MIN,
+                      temp_max: float = TEMP_MAX) -> dict:
     """Scan BLE synchrone. Retourne {mac_lower: temp_celsius}.
     Leve RuntimeError si bleak est absent."""
     if not HAS_BLEAK:
         raise RuntimeError("bleak non installe (pip install bleak)")
     targets = {m.lower() for m in macs}
-    return asyncio.run(_scan_async(targets))
+    return asyncio.run(_scan_async(targets, temp_min, temp_max))

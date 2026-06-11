@@ -1,4 +1,4 @@
-"""Widgets et helpers UI communs, optimises pour ecran tactile 480x800 portrait."""
+"""Widgets et helpers UI communs, optimises pour ecran tactile 800x480 paysage."""
 import tkinter as tk
 from tkinter import messagebox
 from . import config
@@ -113,8 +113,11 @@ def text_popup(parent, title="Saisie", initial=""):
     top.transient(parent)
     top.grab_set()
     top.resizable(False, False)
-    h = config.SCREEN_H - 20
-    top.geometry(f"478x{h}+1+5")
+    w = min(620, config.SCREEN_W - 4)
+    h = min(440, config.SCREEN_H - 10)
+    x = (config.SCREEN_W - w) // 2
+    y = (config.SCREEN_H - h) // 2
+    top.geometry(f"{w}x{h}+{x}+{y}")
     top.overrideredirect(True)
     style_popup(top)
 

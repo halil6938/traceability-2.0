@@ -9,6 +9,7 @@ from .ui_temperature import TemperatureScreen
 from .ui_history import HistoryScreen
 from .ui_settings import SettingsScreen
 from .ui_setup import SetupWizard
+from .ui_reception import ReceptionScreen
 
 
 class App(tk.Tk):
@@ -61,6 +62,10 @@ class App(tk.Tk):
     def show_temperature(self):
         self._clear()
         self.current = TemperatureScreen(self, self.show_menu)
+
+    def show_reception(self):
+        self._clear()
+        self.current = ReceptionScreen(self, self.show_menu)
 
     def show_history(self):
         self._clear()
@@ -193,8 +198,9 @@ class MainMenu(tk.Frame):
         grid = tk.Frame(self, bg=config.COLOR_BG)
         grid.pack(fill="both", expand=True, padx=20, pady=6)
         grid.columnconfigure(0, weight=1)
+        grid.columnconfigure(1, weight=1)
+        grid.columnconfigure(2, weight=1)
         grid.rowconfigure(0, weight=1)
-        grid.rowconfigure(1, weight=1)
 
         self._big_card(grid, "📷", "Scan ticket",
                        "Prendre une photo automatique",
@@ -203,7 +209,11 @@ class MainMenu(tk.Frame):
         self._big_card(grid, "🌡", "Relevé de température",
                        "Saisir les temperatures du jour",
                        config.COLOR_SUCCESS, self.app.show_temperature
-                       ).grid(row=1, column=0, sticky="nsew", padx=8, pady=4)
+                       ).grid(row=0, column=1, sticky="nsew", padx=8, pady=4)
+        self._big_card(grid, "📦", "Réception",
+                       "Température des produits livrés",
+                       config.COLOR_WARNING, self.app.show_reception
+                       ).grid(row=0, column=2, sticky="nsew", padx=8, pady=4)
 
         # Bas : historique + parametres
         bottom = tk.Frame(self, bg=config.COLOR_BG)
@@ -224,9 +234,9 @@ class MainMenu(tk.Frame):
         tk.Label(card, text=icon, bg=color, fg="white",
                  font=("DejaVu Sans", 48)).pack(pady=(20, 0))
         tk.Label(card, text=title, bg=color, fg="white",
-                 font=config.FONT_BIG).pack()
+                 font=config.FONT_BIG, wraplength=220).pack()
         tk.Label(card, text=subtitle, bg=color, fg="white",
-                 font=config.FONT_SMALL).pack(pady=(4, 0))
+                 font=config.FONT_SMALL, wraplength=220).pack(pady=(4, 0))
         for w in card.winfo_children():
             w.bind("<Button-1>", lambda e: command())
         return card

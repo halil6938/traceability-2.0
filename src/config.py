@@ -9,13 +9,13 @@ LOG_DIR = APP_DIR / "logs"
 
 USB_SUBDIR = "traceability"  # sous-dossier créé sur la clé
 
-# Parametres ecran — PORTRAIT 480x800
-SCREEN_W = 480
-SCREEN_H = 800
+# Parametres ecran — PAYSAGE 800x480
+SCREEN_W = 800
+SCREEN_H = 480
 
 # Camera
 CAMERA_RESOLUTION = (1640, 1232)  # capture haute qualite (ratio 4:3 natif Pi Camera v2)
-PREVIEW_RESOLUTION = (480, 640)   # preview portrait
+PREVIEW_RESOLUTION = (640, 480)   # preview paysage
 CAMERA_ROTATION = 180             # rotation si camera montee de cote : 0, 90, 180 ou 270
 RECT_STABLE_FRAMES = 8            # frames consecutifs avec rectangle detecte avant capture
 RECT_MIN_AREA_RATIO = 0.08        # aire min du rectangle / aire frame
