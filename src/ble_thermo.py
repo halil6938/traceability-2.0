@@ -166,7 +166,7 @@ async def _read_async(mac: str, timeout: float):
                 except Exception as e:
                     logger.warning("ecriture CMD_START : %s", e)
                     return
-                await asyncio.sleep(0.8)
+                await asyncio.sleep(0.3)
 
         logger.info("connecte a %s, %d notify, envoi CMD_UNLOCK + CMD_START",
                     mac, len(subscribed))
