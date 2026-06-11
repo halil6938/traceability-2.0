@@ -21,6 +21,9 @@ FOCUS_DISTANCE_CM = 0             # 0 = autofocus reel avant chaque photo
                                   # (recommande : les modules AF generiques ne
                                   # sont pas calibres). >0 = focus fige a cette
                                   # distance en cm (necessite objectif calibre).
+CROP_TO_LABEL = True              # recadre la photo sur l'etiquette detectee
+                                  # (objectif grand angle : sans cela beaucoup
+                                  # de decor inutile autour du ticket)
 RECT_STABLE_FRAMES = 8            # frames consecutifs avec rectangle detecte avant capture
 RECT_MIN_AREA_RATIO = 0.08        # aire min du rectangle / aire frame
 

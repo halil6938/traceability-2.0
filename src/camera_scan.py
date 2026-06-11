@@ -142,11 +142,10 @@ class CameraScanScreen(tk.Frame):
             except Exception:
                 time.sleep(0.8)  # focale fixe : laisser l'expo se stabiliser
         arr = self.picam.capture_array()
-        # Appliquer la rotation a la photo finale aussi
-        if config.CAMERA_ROTATION != 0:
-            img = Image.fromarray(arr).rotate(-config.CAMERA_ROTATION, expand=True)
-        else:
-            img = Image.fromarray(arr)
+        # Rotation puis recadrage sur l'etiquette
+        arr = self._apply_rotation(arr)
+        arr = self._crop_to_label(arr)
+        img = Image.fromarray(arr)
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=95)
         # remettre en preview
@@ -177,12 +176,29 @@ class CameraScanScreen(tk.Frame):
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.PREVIEW_RESOLUTION[1])
         if frame is None:
             return b""
-        if config.CAMERA_ROTATION != 0:
-            frame = cv2.cvtColor(
-                self._apply_rotation(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)),
-                cv2.COLOR_RGB2BGR)
+        rgb = self._apply_rotation(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        rgb = self._crop_to_label(rgb)
+        frame = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
         return buf.tobytes()
+
+    def _crop_to_label(self, rgb_array):
+        """Recadre sur l'etiquette detectee (+10% de marge). Si aucune
+        etiquette n'est trouvee sur la photo, on la garde entiere."""
+        if not config.CROP_TO_LABEL:
+            return rgb_array
+        try:
+            rect = self._detect_rectangle(rgb_array)
+        except Exception:
+            return rgb_array
+        if rect is None:
+            return rgb_array
+        x, y, w, h = cv2.boundingRect(rect)
+        H, W = rgb_array.shape[:2]
+        mx, my = int(w * 0.10), int(h * 0.10)
+        x0, y0 = max(0, x - mx), max(0, y - my)
+        x1, y1 = min(W, x + w + mx), min(H, y + h + my)
+        return rgb_array[y0:y1, x0:x1]
 
     # --- detection rectangle ---
     def _detect_rectangle(self, rgb_frame) -> np.ndarray | None:
