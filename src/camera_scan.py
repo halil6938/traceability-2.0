@@ -60,6 +60,15 @@ class CameraScanScreen(tk.Frame):
         except Exception:
             pass  # si le controle n'est pas supporte, on ignore
 
+    def _enable_autofocus_picamera(self):
+        """Active l'autofocus continu si la camera le supporte (Camera v3,
+        Arducam AF, modeles generiques...)."""
+        try:
+            from libcamera import controls
+            self.picam.set_controls({"AfMode": controls.AfModeEnum.Continuous})
+        except Exception:
+            pass  # camera a focale fixe : on ignore
+
     def _init_camera(self):
         if HAS_PICAMERA:
             self.picam = Picamera2()
@@ -69,6 +78,7 @@ class CameraScanScreen(tk.Frame):
             self.picam.configure(cfg)
             self.picam.start()
             self._set_full_fov()
+            self._enable_autofocus_picamera()
             self.capture_fn = self._capture_picamera
             self.read_fn = self._read_picamera
         else:
@@ -76,6 +86,7 @@ class CameraScanScreen(tk.Frame):
             self.cap = cv2.VideoCapture(0)
             self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.PREVIEW_RESOLUTION[0])
             self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.PREVIEW_RESOLUTION[1])
+            self.cap.set(cv2.CAP_PROP_AUTOFOCUS, 1)
             self.capture_fn = self._capture_opencv
             self.read_fn = self._read_opencv
 
@@ -112,7 +123,12 @@ class CameraScanScreen(tk.Frame):
         self.picam.configure(hi_cfg)
         self.picam.start()
         self._set_full_fov()
-        time.sleep(0.8)  # laisser l'auto-exposition se stabiliser
+        self._enable_autofocus_picamera()
+        # Declencher un cycle d'autofocus complet avant la photo (cameras AF)
+        try:
+            self.picam.autofocus_cycle()
+        except Exception:
+            time.sleep(0.8)  # focale fixe : on laisse juste l'expo se stabiliser
         arr = self.picam.capture_array()
         # Appliquer la rotation a la photo finale aussi
         if config.CAMERA_ROTATION != 0:
@@ -129,13 +145,31 @@ class CameraScanScreen(tk.Frame):
         self.picam.configure(cfg)
         self.picam.start()
         self._set_full_fov()
+        self._enable_autofocus_picamera()
         return buf.getvalue()
 
     def _capture_opencv(self) -> bytes:
-        ok, frame = self.cap.read()
-        if not ok:
+        # Basculer la webcam en resolution max le temps de la capture
+        # (le preview tourne en basse resolution pour la fluidite)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 4096)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 3072)  # le driver retombe sur son max reel
+        # Purger le buffer + laisser l'autofocus/expo se refaire
+        frame = None
+        for _ in range(8):
+            ok, f = self.cap.read()
+            if ok:
+                frame = f
+            time.sleep(0.1)
+        # Retour en resolution preview
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.PREVIEW_RESOLUTION[0])
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.PREVIEW_RESOLUTION[1])
+        if frame is None:
             return b""
-        _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 92])
+        if config.CAMERA_ROTATION != 0:
+            frame = cv2.cvtColor(
+                self._apply_rotation(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)),
+                cv2.COLOR_RGB2BGR)
+        _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
         return buf.tobytes()
 
     # --- detection rectangle ---
