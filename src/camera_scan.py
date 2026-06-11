@@ -100,13 +100,19 @@ class CameraScanScreen(tk.Frame):
     def _capture_picamera(self) -> bytes:
         import io
         self.picam.stop()
+        # Pleine resolution du capteur (3280x2464 sur Camera v2) pour que le
+        # texte du ticket reste lisible ; fallback sur CAMERA_RESOLUTION.
+        try:
+            full_res = tuple(self.picam.camera_properties["PixelArraySize"])
+        except Exception:
+            full_res = config.CAMERA_RESOLUTION
         hi_cfg = self.picam.create_still_configuration(
-            main={"size": config.CAMERA_RESOLUTION, "format": "RGB888"}
+            main={"size": full_res, "format": "RGB888"}
         )
         self.picam.configure(hi_cfg)
         self.picam.start()
         self._set_full_fov()
-        time.sleep(0.3)
+        time.sleep(0.8)  # laisser l'auto-exposition se stabiliser
         arr = self.picam.capture_array()
         # Appliquer la rotation a la photo finale aussi
         if config.CAMERA_ROTATION != 0:
@@ -114,7 +120,7 @@ class CameraScanScreen(tk.Frame):
         else:
             img = Image.fromarray(arr)
         buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=92)
+        img.save(buf, format="JPEG", quality=95)
         # remettre en preview
         self.picam.stop()
         cfg = self.picam.create_preview_configuration(
