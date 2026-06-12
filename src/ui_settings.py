@@ -299,7 +299,7 @@ class SettingsScreen(tk.Frame):
         info(self, "Export OK", f"Fichier enregistre :\n{path.name}")
 
     def _test_camera(self):
-        """Ouvre la camera en mode test : detection active, aucune photo enregistree."""
+        """Ouvre la camera en test de nettete : preview + score, sans capture."""
         from .camera_scan import CameraScanScreen
         app = self.master
 

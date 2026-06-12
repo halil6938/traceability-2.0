@@ -31,7 +31,8 @@ class CameraScanScreen(tk.Frame):
         # Barre status + bouton retour
         bar = tk.Frame(self, bg="black")
         bar.place(relx=0, rely=0, relwidth=1, height=48)
-        status_text = "MODE TEST — aucune photo enregistree" if test_mode else "Recherche d'une etiquette..."
+        status_text = ("TEST NETTETÉ — placez le ticket dans le cadre et réglez la distance"
+                       if test_mode else "Recherche d'une etiquette...")
         status_color = config.COLOR_WARNING if test_mode else "white"
         self.status = tk.Label(bar, text=status_text,
                                fg=status_color, bg="black", font=config.FONT_MED)
@@ -47,6 +48,7 @@ class CameraScanScreen(tk.Frame):
         self._stable_count = 0
         self._last_capture = 0
         self._capturing = False
+        self._sharp_max = 0.0  # meilleur score de nettete vu (mode test)
 
         self._init_camera()
         self.after(10, self._loop)
@@ -251,34 +253,51 @@ class CameraScanScreen(tk.Frame):
         return best
 
     # --- boucle preview ---
+    def _sharpness_overlay(self, frame):
+        """Mode test : score de nettete (variance du laplacien) sur la zone
+        centrale, pour regler la distance camera-ticket. Aucune capture."""
+        display = frame.copy()
+        gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+        h, w = gray.shape
+        x0, y0, x1, y1 = w // 4, h // 4, 3 * w // 4, 3 * h // 4
+        score = cv2.Laplacian(gray[y0:y1, x0:x1], cv2.CV_64F).var()
+        self._sharp_max = max(self._sharp_max, score)
+        cv2.rectangle(display, (x0, y0), (x1, y1), (14, 165, 233), 3)
+        ratio = score / self._sharp_max if self._sharp_max > 0 else 0.0
+        color = (config.COLOR_SUCCESS if ratio > 0.8 else
+                 config.COLOR_WARNING if ratio > 0.5 else config.COLOR_DANGER)
+        self.status.config(
+            text=f"Netteté : {score:.0f}   (meilleur : {self._sharp_max:.0f}) "
+                 "— ajustez la distance pour maximiser",
+            fg=color)
+        return display
+
     def _loop(self):
         if self._stop:
             return
         frame = self.read_fn()
         if frame is not None:
-            rect = self._detect_rectangle(frame)
-            display = frame.copy()
-            if rect is not None:
-                cv2.drawContours(display, [rect], -1, (0, 255, 0), 4)
-                self._stable_count += 1
-                self.status.config(
-                    text=f"Etiquette detectee... {self._stable_count}/{config.RECT_STABLE_FRAMES}",
-                    fg=config.COLOR_SUCCESS,
-                )
-                if (self._stable_count >= config.RECT_STABLE_FRAMES
-                        and not self._capturing
-                        and time.time() - self._last_capture > 2):
-                    if self.test_mode:
-                        # Mode test : flash vert sans capture
-                        self._stable_count = 0
-                        self._last_capture = time.time()
-                        self.after(0, self._show_test_flash)
-                    else:
+            if self.test_mode:
+                # Test de nettete : ni detection, ni capture
+                display = self._sharpness_overlay(frame)
+            else:
+                rect = self._detect_rectangle(frame)
+                display = frame.copy()
+                if rect is not None:
+                    cv2.drawContours(display, [rect], -1, (0, 255, 0), 4)
+                    self._stable_count += 1
+                    self.status.config(
+                        text=f"Etiquette detectee... {self._stable_count}/{config.RECT_STABLE_FRAMES}",
+                        fg=config.COLOR_SUCCESS,
+                    )
+                    if (self._stable_count >= config.RECT_STABLE_FRAMES
+                            and not self._capturing
+                            and time.time() - self._last_capture > 2):
                         self._capturing = True
                         threading.Thread(target=self._do_capture, daemon=True).start()
-            else:
-                self._stable_count = max(0, self._stable_count - 1)
-                self.status.config(text="Recherche d'une etiquette...", fg="white")
+                else:
+                    self._stable_count = max(0, self._stable_count - 1)
+                    self.status.config(text="Recherche d'une etiquette...", fg="white")
 
             img = Image.fromarray(display).resize((config.SCREEN_W, config.SCREEN_H))
             self._tkimg = ImageTk.PhotoImage(img)
@@ -298,15 +317,6 @@ class CameraScanScreen(tk.Frame):
             self._last_capture = time.time()
             self._stable_count = 0
             self._capturing = False
-
-    def _show_test_flash(self):
-        """Flash vert en mode test : rectangle detecte, mais pas de capture."""
-        self.flash.place(relx=0, rely=0, relwidth=1, relheight=1)
-        lbl = tk.Label(self.flash, text="Rectangle detecte ✓\n(mode test — non enregistre)",
-                       bg="white", fg=config.COLOR_SUCCESS, font=config.FONT_BIG,
-                       justify="center")
-        lbl.place(relx=0.5, rely=0.5, anchor="center")
-        self.after(800, lambda: (lbl.destroy(), self.flash.place_forget()))
 
     def _show_flash(self, on_usb: bool, dest: Path):
         self.flash.place(relx=0, rely=0, relwidth=1, relheight=1)
