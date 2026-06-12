@@ -31,7 +31,7 @@ class CameraScanScreen(tk.Frame):
         # Barre status + bouton retour
         bar = tk.Frame(self, bg="black")
         bar.place(relx=0, rely=0, relwidth=1, height=48)
-        status_text = ("TEST NETTETÉ — placez le ticket dans le cadre et réglez la distance"
+        status_text = ("TEST CAMÉRA — image brute, réglez la distance du ticket"
                        if test_mode else "Recherche d'une etiquette...")
         status_color = config.COLOR_WARNING if test_mode else "white"
         self.status = tk.Label(bar, text=status_text,
@@ -81,10 +81,12 @@ class CameraScanScreen(tk.Frame):
             pass  # camera a focale fixe : on ignore
 
     def _init_camera(self):
+        # Mode test : preview plus defini pour juger la qualite reelle
+        preview_size = (1296, 972) if self.test_mode else config.PREVIEW_RESOLUTION
         if HAS_PICAMERA:
             self.picam = Picamera2()
             cfg = self.picam.create_preview_configuration(
-                main={"size": config.PREVIEW_RESOLUTION, "format": "RGB888"}
+                main={"size": preview_size, "format": "RGB888"}
             )
             self.picam.configure(cfg)
             self.picam.start()
@@ -95,8 +97,8 @@ class CameraScanScreen(tk.Frame):
         else:
             # Fallback webcam USB (dev sur PC)
             self.cap = cv2.VideoCapture(0)
-            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.PREVIEW_RESOLUTION[0])
-            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.PREVIEW_RESOLUTION[1])
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, preview_size[0])
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, preview_size[1])
             self.cap.set(cv2.CAP_PROP_AUTOFOCUS, 1)
             self.capture_fn = self._capture_opencv
             self.read_fn = self._read_opencv
@@ -253,24 +255,20 @@ class CameraScanScreen(tk.Frame):
         return best
 
     # --- boucle preview ---
-    def _sharpness_overlay(self, frame):
+    def _update_sharpness(self, frame):
         """Mode test : score de nettete (variance du laplacien) sur la zone
-        centrale, pour regler la distance camera-ticket. Aucune capture."""
-        display = frame.copy()
+        centrale, affiche dans la barre de statut. L'image n'est pas modifiee."""
         gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
         h, w = gray.shape
-        x0, y0, x1, y1 = w // 4, h // 4, 3 * w // 4, 3 * h // 4
-        score = cv2.Laplacian(gray[y0:y1, x0:x1], cv2.CV_64F).var()
+        score = cv2.Laplacian(gray[h // 4:3 * h // 4, w // 4:3 * w // 4],
+                              cv2.CV_64F).var()
         self._sharp_max = max(self._sharp_max, score)
-        cv2.rectangle(display, (x0, y0), (x1, y1), (14, 165, 233), 3)
         ratio = score / self._sharp_max if self._sharp_max > 0 else 0.0
         color = (config.COLOR_SUCCESS if ratio > 0.8 else
                  config.COLOR_WARNING if ratio > 0.5 else config.COLOR_DANGER)
         self.status.config(
-            text=f"Netteté : {score:.0f}   (meilleur : {self._sharp_max:.0f}) "
-                 "— ajustez la distance pour maximiser",
+            text=f"Image brute — Netteté : {score:.0f} (meilleur : {self._sharp_max:.0f})",
             fg=color)
-        return display
 
     def _loop(self):
         if self._stop:
@@ -278,8 +276,18 @@ class CameraScanScreen(tk.Frame):
         frame = self.read_fn()
         if frame is not None:
             if self.test_mode:
-                # Test de nettete : ni detection, ni capture
-                display = self._sharpness_overlay(frame)
+                # Image brute : ni detection, ni trace, ni capture.
+                # Redimensionnement sans deformation (rapport conserve).
+                self._update_sharpness(frame)
+                img = Image.fromarray(frame)
+                scale = min(config.SCREEN_W / img.width, config.SCREEN_H / img.height)
+                img = img.resize((max(1, int(img.width * scale)),
+                                  max(1, int(img.height * scale))),
+                                 Image.BILINEAR)
+                self._tkimg = ImageTk.PhotoImage(img)
+                self.preview_label.config(image=self._tkimg)
+                self.after(30, self._loop)
+                return
             else:
                 rect = self._detect_rectangle(frame)
                 display = frame.copy()
