@@ -81,8 +81,7 @@ class CameraScanScreen(tk.Frame):
             pass  # camera a focale fixe : on ignore
 
     def _init_camera(self):
-        # Mode test : preview plus defini pour juger la qualite reelle
-        preview_size = (1296, 972) if self.test_mode else config.PREVIEW_RESOLUTION
+        preview_size = config.PREVIEW_RESOLUTION
         if HAS_PICAMERA:
             self.picam = Picamera2()
             cfg = self.picam.create_preview_configuration(
@@ -105,12 +104,13 @@ class CameraScanScreen(tk.Frame):
 
     def _apply_rotation(self, rgb_array):
         """Applique CAMERA_ROTATION (0/90/180/270) sur un tableau numpy RGB."""
-        if config.CAMERA_ROTATION == 0:
-            return rgb_array
-        img = Image.fromarray(rgb_array)
-        # PIL rotate() est anti-horaire, donc on inverse le signe
-        img = img.rotate(-config.CAMERA_ROTATION, expand=True)
-        return np.array(img)
+        if config.CAMERA_ROTATION == 90:
+            return cv2.rotate(rgb_array, cv2.ROTATE_90_CLOCKWISE)
+        if config.CAMERA_ROTATION == 180:
+            return cv2.rotate(rgb_array, cv2.ROTATE_180)
+        if config.CAMERA_ROTATION == 270:
+            return cv2.rotate(rgb_array, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        return rgb_array
 
     def _read_picamera(self):
         return self._apply_rotation(self.picam.capture_array())
@@ -270,29 +270,31 @@ class CameraScanScreen(tk.Frame):
             text=f"Image brute — Netteté : {score:.0f} (meilleur : {self._sharp_max:.0f})",
             fg=color)
 
+    def _show_frame(self, rgb_array):
+        """Affiche l'image sans deformation (rapport conserve, lissage bilineaire)."""
+        img = Image.fromarray(rgb_array)
+        scale = min(config.SCREEN_W / img.width, config.SCREEN_H / img.height)
+        img = img.resize((max(1, int(img.width * scale)),
+                          max(1, int(img.height * scale))), Image.BILINEAR)
+        self._tkimg = ImageTk.PhotoImage(img)
+        self.preview_label.config(image=self._tkimg)
+
     def _loop(self):
         if self._stop:
             return
         frame = self.read_fn()
         if frame is not None:
             if self.test_mode:
-                # Image brute : ni detection, ni trace, ni capture.
-                # Redimensionnement sans deformation (rapport conserve).
+                # Image brute : ni detection, ni trace, ni capture
                 self._update_sharpness(frame)
-                img = Image.fromarray(frame)
-                scale = min(config.SCREEN_W / img.width, config.SCREEN_H / img.height)
-                img = img.resize((max(1, int(img.width * scale)),
-                                  max(1, int(img.height * scale))),
-                                 Image.BILINEAR)
-                self._tkimg = ImageTk.PhotoImage(img)
-                self.preview_label.config(image=self._tkimg)
-                self.after(30, self._loop)
-                return
             else:
-                rect = self._detect_rectangle(frame)
-                display = frame.copy()
+                # Detection sur une copie reduite de moitie (CPU du Pi 3),
+                # affichage en pleine definition
+                half = cv2.resize(frame, (frame.shape[1] // 2, frame.shape[0] // 2),
+                                  interpolation=cv2.INTER_AREA)
+                rect = self._detect_rectangle(half)
                 if rect is not None:
-                    cv2.drawContours(display, [rect], -1, (0, 255, 0), 4)
+                    cv2.drawContours(frame, [rect * 2], -1, (0, 255, 0), 6)
                     self._stable_count += 1
                     self.status.config(
                         text=f"Etiquette detectee... {self._stable_count}/{config.RECT_STABLE_FRAMES}",
@@ -307,9 +309,7 @@ class CameraScanScreen(tk.Frame):
                     self._stable_count = max(0, self._stable_count - 1)
                     self.status.config(text="Recherche d'une etiquette...", fg="white")
 
-            img = Image.fromarray(display).resize((config.SCREEN_W, config.SCREEN_H))
-            self._tkimg = ImageTk.PhotoImage(img)
-            self.preview_label.config(image=self._tkimg)
+            self._show_frame(frame)
 
         self.after(30, self._loop)
 

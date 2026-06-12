@@ -15,7 +15,9 @@ SCREEN_H = 480
 
 # Camera
 CAMERA_RESOLUTION = (1640, 1232)  # capture haute qualite (ratio 4:3 natif Pi Camera v2)
-PREVIEW_RESOLUTION = (640, 480)   # preview paysage
+PREVIEW_RESOLUTION = (1296, 972)  # preview 4:3 (mode capteur binning 2x2, bien
+                                  # plus net que le mode 640x480) ; la detection
+                                  # tourne sur une copie reduite de moitie
 CAMERA_ROTATION = 180             # rotation si camera montee de cote : 0, 90, 180 ou 270
 FOCUS_DISTANCE_CM = 0             # 0 = autofocus reel avant chaque photo
                                   # (recommande : les modules AF generiques ne
