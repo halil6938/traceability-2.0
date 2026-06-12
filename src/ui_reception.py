@@ -6,8 +6,8 @@ from datetime import date, datetime
 from . import config, database
 from .ui_common import text_popup, numpad_popup, style_popup, confirm, error
 
-# Verrou global : une seule operation BLE a la fois (scan + scan = blocage BlueZ)
-_BLE_LOCK = threading.Lock()
+# Verrou Bluetooth partage par toute l'appli (voir config.py)
+_BLE_LOCK = config.BLE_LOCK
 
 
 class ReceptionScreen(tk.Frame):

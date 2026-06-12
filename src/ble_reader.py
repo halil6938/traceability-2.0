@@ -22,7 +22,7 @@ except ImportError:
 
 
 async def _scan_async(targets: set, temp_min: float = TEMP_MIN,
-                      temp_max: float = TEMP_MAX) -> dict:
+                      temp_max: float = TEMP_MAX, cancel=None) -> dict:
     results = {}
 
     def callback(device, adv):
@@ -42,8 +42,10 @@ async def _scan_async(targets: set, temp_min: float = TEMP_MIN,
     await scanner.start()
     elapsed = 0.0
     while elapsed < SCAN_TIMEOUT:
-        await asyncio.sleep(1.0)
-        elapsed += 1.0
+        if cancel is not None and cancel.is_set():
+            break
+        await asyncio.sleep(0.3)
+        elapsed += 0.3
         if targets <= results.keys():   # tous les capteurs trouves -> arret anticipe
             break
     await scanner.stop()
@@ -51,10 +53,12 @@ async def _scan_async(targets: set, temp_min: float = TEMP_MIN,
 
 
 def read_temperatures(macs: list, temp_min: float = TEMP_MIN,
-                      temp_max: float = TEMP_MAX) -> dict:
+                      temp_max: float = TEMP_MAX, cancel=None) -> dict:
     """Scan BLE synchrone. Retourne {mac_lower: temp_celsius}.
+    cancel : threading.Event optionnel — stoppe le scan en moins de 0.5 s
+    en renvoyant ce qui a deja ete capte.
     Leve RuntimeError si bleak est absent."""
     if not HAS_BLEAK:
         raise RuntimeError("bleak non installe (pip install bleak)")
     targets = {m.lower() for m in macs}
-    return asyncio.run(_scan_async(targets, temp_min, temp_max))
+    return asyncio.run(_scan_async(targets, temp_min, temp_max, cancel))

@@ -1,5 +1,10 @@
 """Configuration globale de l'application Traceability."""
+import threading
 from pathlib import Path
+
+# Verrou global : une seule operation Bluetooth a la fois dans toute l'appli
+# (deux scans simultanes peuvent bloquer BlueZ sur le Pi)
+BLE_LOCK = threading.Lock()
 
 # Dossiers sur la carte SD du Pi (config permanente)
 APP_DIR = Path.home() / "traceability"

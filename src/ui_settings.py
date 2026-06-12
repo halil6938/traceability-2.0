@@ -254,30 +254,43 @@ class SettingsScreen(tk.Frame):
             status_var.set("Lecture BLE en cours... (max 25 s)")
             status_lbl.config(fg=config.COLOR_WARNING)
 
+            # Le thread BLE ne touche pas a l'UI : resultat lu par polling
+            box = {}
+
             def do():
-                try:
-                    results = ble_reader.read_temperatures(macs)
-                    # Mode TEST : on affiche seulement, aucun enregistrement en base
-                    found = []
-                    for s in cur_sensors:
-                        if not s["device_id"]:
-                            continue
-                        temp = results.get(s["mac"].lower())
-                        if temp is not None:
-                            found.append(f"{s['device_name']}: {temp:.1f}°C")
-                    if found:
-                        msg = "✓ Test (non enregistre) — " + "   ".join(found)
-                        fg = config.COLOR_SUCCESS
-                    else:
-                        msg = "✗ Aucun capteur detecte (hors portee ?)"
-                        fg = config.COLOR_DANGER
-                except Exception as e:
-                    msg = f"Erreur: {e}"
-                    fg = config.COLOR_DANGER
-                top.after(0, lambda: (status_var.set(msg),
-                                      status_lbl.config(fg=fg)))
+                with config.BLE_LOCK:
+                    try:
+                        results = ble_reader.read_temperatures(macs)
+                        # Mode TEST : affichage seulement, rien en base
+                        found = []
+                        for s in cur_sensors:
+                            if not s["device_id"]:
+                                continue
+                            temp = results.get(s["mac"].lower())
+                            if temp is not None:
+                                found.append(f"{s['device_name']}: {temp:.1f}°C")
+                        if found:
+                            box["msg"] = "✓ Test (non enregistre) — " + "   ".join(found)
+                            box["fg"] = config.COLOR_SUCCESS
+                        else:
+                            box["msg"] = "✗ Aucun capteur detecte (hors portee ?)"
+                            box["fg"] = config.COLOR_DANGER
+                    except Exception as e:
+                        box["msg"] = f"Erreur: {e}"
+                        box["fg"] = config.COLOR_DANGER
+                box["done"] = True
+
+            def poll():
+                if not top.winfo_exists():
+                    return
+                if not box.get("done"):
+                    top.after(200, poll)
+                    return
+                status_var.set(box["msg"])
+                status_lbl.config(fg=box["fg"])
 
             threading.Thread(target=do, daemon=True).start()
+            top.after(200, poll)
 
         tk.Button(bottom, text="🔍 Tester la lecture (sans enregistrer)",
                   font=config.FONT_MED,

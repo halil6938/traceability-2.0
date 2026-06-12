@@ -100,7 +100,8 @@ class App(tk.Tk):
         if not macs:
             return
         try:
-            results = ble_reader.read_temperatures(macs)
+            with config.BLE_LOCK:
+                results = ble_reader.read_temperatures(macs)
         except Exception:
             return
         today = date.today()

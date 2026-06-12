@@ -59,6 +59,7 @@ class TemperatureScreen(tk.Frame):
         sb.pack(side="right", fill="y")
 
         self.rows = {}
+        self._ble_cancel = threading.Event()
         self._render()
         self._start_ble_scan()
 
@@ -143,18 +144,38 @@ class TemperatureScreen(tk.Frame):
             return
         self.status_var.set("Lecture BLE en cours...")
         self.status_lbl.config(fg=config.COLOR_WARNING)
-        threading.Thread(target=self._do_scan, args=(sensors, macs), daemon=True).start()
 
-    def _do_scan(self, sensors, macs):
-        from . import ble_reader
-        try:
-            results = ble_reader.read_temperatures(macs)
-            self.after(0, lambda: self._apply_results(sensors, results))
-        except Exception as e:
-            self.after(0, lambda err=str(e): (
-                self.status_var.set(f"Erreur BLE : {err}"),
-                self.status_lbl.config(fg=config.COLOR_DANGER),
-            ))
+        # Le thread BLE ne touche JAMAIS a l'UI (Tk n'est pas thread-safe) :
+        # il depose son resultat dans box, l'UI le lit par polling.
+        cancel = self._ble_cancel
+        box = {}
+
+        def do():
+            with config.BLE_LOCK:
+                if cancel.is_set():
+                    box["done"] = True
+                    return
+                from . import ble_reader
+                try:
+                    box["results"] = ble_reader.read_temperatures(macs, cancel=cancel)
+                except Exception as e:
+                    box["err"] = str(e)
+            box["done"] = True
+
+        def poll():
+            if cancel.is_set() or not self.winfo_exists():
+                return
+            if not box.get("done"):
+                self.after(200, poll)
+                return
+            if "results" in box:
+                self._apply_results(sensors, box["results"])
+            elif "err" in box:
+                self.status_var.set(f"Erreur BLE : {box['err']}")
+                self.status_lbl.config(fg=config.COLOR_DANGER)
+
+        threading.Thread(target=do, daemon=True).start()
+        self.after(200, poll)
 
     def _apply_results(self, sensors, results):
         if not self.winfo_exists():
@@ -178,5 +199,6 @@ class TemperatureScreen(tk.Frame):
             self.status_lbl.config(fg=config.COLOR_DANGER)
 
     def _back(self):
+        self._ble_cancel.set()  # stoppe le scan BLE en cours immediatement
         self.destroy()
         self.on_done()
