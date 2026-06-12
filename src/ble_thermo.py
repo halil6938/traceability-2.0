@@ -93,7 +93,25 @@ def parse_frame(data: bytes):
     return None
 
 
-async def _resolve_device(mac: str, deadline: float):
+async def _wait_event(evt: asyncio.Event, deadline: float, cancel=None) -> bool:
+    """Attend evt au plus deadline secondes, en s'interrompant des que
+    cancel (threading.Event) est leve. Retourne True si evt est arrive."""
+    loop = asyncio.get_running_loop()
+    end = loop.time() + deadline
+    while not evt.is_set():
+        if cancel is not None and cancel.is_set():
+            return False
+        remaining = end - loop.time()
+        if remaining <= 0:
+            return False
+        try:
+            await asyncio.wait_for(evt.wait(), timeout=min(0.3, remaining))
+        except asyncio.TimeoutError:
+            pass
+    return True
+
+
+async def _resolve_device(mac: str, deadline: float, cancel=None):
     """Attend que le pistolet apparaisse et retourne DES LA PREMIERE detection
     (le pistolet ne reste joignable qu'un court instant apres la gachette, il
     faut donc se connecter au plus vite). Retourne un BLEDevice, ou None."""
@@ -109,15 +127,14 @@ async def _resolve_device(mac: str, deadline: float):
     scanner = BleakScanner(detection_callback=cb)
     await scanner.start()
     try:
-        await asyncio.wait_for(found.wait(), deadline)
-    except asyncio.TimeoutError:
-        return None
+        if not await _wait_event(found, deadline, cancel):
+            return None
     finally:
         await scanner.stop()
     return box.get("dev")
 
 
-async def _read_async(mac: str, timeout: float):
+async def _read_async(mac: str, timeout: float, cancel=None):
     got = asyncio.Event()
     result = {}
 
@@ -130,9 +147,9 @@ async def _read_async(mac: str, timeout: float):
             got.set()
 
     # Phase 1 : attendre que l'operateur reveille le pistolet (gachette)
-    target = await _resolve_device(mac, deadline=timeout)
+    target = await _resolve_device(mac, deadline=timeout, cancel=cancel)
     if target is None:
-        logger.info("pistolet introuvable apres %.0fs de scan", timeout)
+        logger.info("pistolet introuvable (timeout ou annulation)")
         return None
     async with BleakClient(target, timeout=CONNECT_TIMEOUT) as client:
         # S'abonner aux mesures (FFB2) ; fallback : toutes les notify connues
@@ -172,9 +189,7 @@ async def _read_async(mac: str, timeout: float):
                     mac, len(subscribed))
         pumper = asyncio.create_task(pump_start())
         try:
-            await asyncio.wait_for(got.wait(), timeout)
-        except asyncio.TimeoutError:
-            return None
+            await _wait_event(got, timeout, cancel)
         finally:
             pumper.cancel()
             try:
@@ -189,13 +204,15 @@ async def _read_async(mac: str, timeout: float):
     return result.get("temp")
 
 
-def read_temperature(mac: str, timeout: float = 30.0):
+def read_temperature(mac: str, timeout: float = 30.0, cancel=None):
     """Connexion GATT au pistolet et attente d'une mesure (gachette).
+    cancel : threading.Event optionnel — des qu'il est leve, la lecture
+    s'arrete proprement en moins d'une seconde (scanner stoppe, deconnexion).
     Retourne la temperature en C, ou None si rien recu avant timeout.
     Leve RuntimeError si bleak absent, BleakError si connexion impossible."""
     if not HAS_BLEAK:
         raise RuntimeError("bleak non installe (pip install bleak)")
-    return asyncio.run(_read_async(mac, timeout))
+    return asyncio.run(_read_async(mac, timeout, cancel))
 
 
 async def _find_async(timeout: float):

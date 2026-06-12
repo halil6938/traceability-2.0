@@ -160,6 +160,8 @@ class ReceptionScreen(tk.Frame):
             if state.get("reading"):
                 return  # lecture deja en cours pour ce popup
             state["reading"] = True
+            cancel_evt = threading.Event()
+            state["cancel"] = cancel_evt
             status_var.set("Recherche du pistolet...\n"
                            "Visez le produit et APPUYEZ PLUSIEURS FOIS sur la "
                            "gâchette jusqu'à la mesure.")
@@ -171,12 +173,13 @@ class ReceptionScreen(tk.Frame):
 
             def do():
                 with _BLE_LOCK:
-                    if state["closed"]:
+                    if state["closed"] or cancel_evt.is_set():
                         box["done"] = True
                         return
                     from . import ble_thermo
                     try:
-                        box["temp"] = ble_thermo.read_temperature(mac, timeout=45.0)
+                        box["temp"] = ble_thermo.read_temperature(
+                            mac, timeout=45.0, cancel=cancel_evt)
                     except Exception as e:
                         box["err"] = str(e)
                 box["done"] = True
@@ -214,14 +217,22 @@ class ReceptionScreen(tk.Frame):
             except ValueError:
                 error(top, "Erreur", "Température invalide.")
 
+        def _stop_ble():
+            """Arrete immediatement la lecture BLE en cours, s'il y en a une."""
+            evt = state.get("cancel")
+            if evt is not None:
+                evt.set()
+
         def save():
             database.save_reception(supplier["id"], state["temp"])
             state["closed"] = True
+            _stop_ble()
             top.destroy()
             self._render_today()
 
         def cancel():
             state["closed"] = True
+            _stop_ble()
             top.destroy()
 
         btns = tk.Frame(top, bg=config.COLOR_BG)
