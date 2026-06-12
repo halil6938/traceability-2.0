@@ -80,14 +80,24 @@ class CameraScanScreen(tk.Frame):
         except Exception:
             pass  # camera a focale fixe : on ignore
 
+    def _make_preview_config(self):
+        """Config preview : main = taille livree (reduite par l'ISP materiel,
+        leger pour le CPU) ; raw = mode capteur force (qualite du binning 2x2)."""
+        try:
+            return self.picam.create_preview_configuration(
+                main={"size": config.PREVIEW_RESOLUTION, "format": "RGB888"},
+                raw={"size": config.PREVIEW_SENSOR_MODE},
+            )
+        except Exception:
+            return self.picam.create_preview_configuration(
+                main={"size": config.PREVIEW_RESOLUTION, "format": "RGB888"}
+            )
+
     def _init_camera(self):
         preview_size = config.PREVIEW_RESOLUTION
         if HAS_PICAMERA:
             self.picam = Picamera2()
-            cfg = self.picam.create_preview_configuration(
-                main={"size": preview_size, "format": "RGB888"}
-            )
-            self.picam.configure(cfg)
+            self.picam.configure(self._make_preview_config())
             self.picam.start()
             self._set_full_fov()
             self._enable_autofocus_picamera()
@@ -154,10 +164,7 @@ class CameraScanScreen(tk.Frame):
         img.save(buf, format="JPEG", quality=95)
         # remettre en preview
         self.picam.stop()
-        cfg = self.picam.create_preview_configuration(
-            main={"size": config.PREVIEW_RESOLUTION, "format": "RGB888"}
-        )
-        self.picam.configure(cfg)
+        self.picam.configure(self._make_preview_config())
         self.picam.start()
         self._set_full_fov()
         self._enable_autofocus_picamera()
@@ -288,13 +295,9 @@ class CameraScanScreen(tk.Frame):
                 # Image brute : ni detection, ni trace, ni capture
                 self._update_sharpness(frame)
             else:
-                # Detection sur une copie reduite de moitie (CPU du Pi 3),
-                # affichage en pleine definition
-                half = cv2.resize(frame, (frame.shape[1] // 2, frame.shape[0] // 2),
-                                  interpolation=cv2.INTER_AREA)
-                rect = self._detect_rectangle(half)
+                rect = self._detect_rectangle(frame)
                 if rect is not None:
-                    cv2.drawContours(frame, [rect * 2], -1, (0, 255, 0), 6)
+                    cv2.drawContours(frame, [rect], -1, (0, 255, 0), 4)
                     self._stable_count += 1
                     self.status.config(
                         text=f"Etiquette detectee... {self._stable_count}/{config.RECT_STABLE_FRAMES}",
