@@ -196,7 +196,7 @@ class ReceptionScreen(tk.Frame):
                  fg=config.COLOR_FG, font=("DejaVu Sans", 40, "bold")
                  ).pack(pady=8)
 
-        state = {"temp": None, "closed": False}
+        state = {"temp": None, "closed": False, "after_id": None}
         conn = self.conn
 
         def set_temp(t):
@@ -252,7 +252,7 @@ class ReceptionScreen(tk.Frame):
                 else:
                     status_var.set("Connexion au pistolet en cours…")
                     status.config(fg=config.COLOR_WARNING)
-            top.after(150, poll_meas)
+            state["after_id"] = top.after(150, poll_meas)
 
         if conn is None:
             status_var.set("Aucun pistolet configuré — saisie manuelle.")
@@ -267,19 +267,31 @@ class ReceptionScreen(tk.Frame):
             except ValueError:
                 error(top, "Erreur", "Température invalide.")
 
-        def save():
-            database.save_reception(supplier["id"], state["temp"])
+        def close_popup():
             state["closed"] = True
+            if state["after_id"] is not None:
+                try:
+                    top.after_cancel(state["after_id"])
+                except Exception:
+                    pass
             if conn is not None:
                 conn.disarm()  # liaison conservee pour le fournisseur suivant
+            # Liberer explicitement le grab AVANT de detruire : sinon, sur le
+            # Pi (X11 + overrideredirect), la capture clavier/souris reste
+            # active et l'ecran sous-jacent parait gele.
+            try:
+                top.grab_release()
+            except Exception:
+                pass
             top.destroy()
+
+        def save():
+            database.save_reception(supplier["id"], state["temp"])
+            close_popup()
             self._render_today()
 
         def cancel():
-            state["closed"] = True
-            if conn is not None:
-                conn.disarm()
-            top.destroy()
+            close_popup()
 
         btns = tk.Frame(top, bg=config.COLOR_BG)
         btns.pack(side="bottom", fill="x", padx=12, pady=10)
@@ -315,13 +327,20 @@ class ReceptionScreen(tk.Frame):
         y = (config.SCREEN_H - h) // 2
         top.geometry(f"{w}x{h}+{x}+{y}")
 
+        def close_mgr():
+            try:
+                top.grab_release()
+            except Exception:
+                pass
+            top.destroy()
+
         hdr = tk.Frame(top, bg=config.COLOR_BG)
         hdr.pack(fill="x", padx=10, pady=8)
         tk.Label(hdr, text="Fournisseurs", bg=config.COLOR_BG,
                  fg=config.COLOR_FG, font=config.FONT_BIG).pack(side="left")
         tk.Button(hdr, text="✕", bg=config.COLOR_DANGER, fg="white",
                   font=config.FONT_MED, bd=0, padx=12,
-                  command=top.destroy).pack(side="right")
+                  command=close_mgr).pack(side="right")
 
         body = tk.Frame(top, bg=config.COLOR_BG)
         body.pack(fill="both", expand=True, padx=10)
@@ -391,6 +410,13 @@ class ReceptionScreen(tk.Frame):
             cx = (config.SCREEN_W - cw) // 2
             cy = (config.SCREEN_H - ch) // 2
             cfg.geometry(f"{cw}x{ch}+{cx}+{cy}")
+
+            def close_cfg():
+                try:
+                    cfg.grab_release()
+                except Exception:
+                    pass
+                cfg.destroy()
 
             tk.Label(cfg, text="Pistolet Bluetooth", bg=config.COLOR_BG,
                      fg=config.COLOR_FG, font=config.FONT_BIG).pack(pady=(12, 2))
@@ -462,7 +488,7 @@ class ReceptionScreen(tk.Frame):
                       bg=config.COLOR_CARD, fg="white", bd=0, command=manual
                       ).pack(side="left", expand=True, fill="x", padx=3, ipady=8)
             tk.Button(cbtns, text="Fermer", font=config.FONT_MED,
-                      bg=config.COLOR_CARD, fg="white", bd=0, command=cfg.destroy
+                      bg=config.COLOR_CARD, fg="white", bd=0, command=close_cfg
                       ).pack(side="left", expand=True, fill="x", padx=3, ipady=8)
 
         tk.Button(bottom, text="+ Ajouter", font=config.FONT_MED,
