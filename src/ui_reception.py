@@ -1,5 +1,6 @@
 """Ecran reception : releve de temperature des produits a l'arrivee, par fournisseur."""
 import threading
+import time
 import tkinter as tk
 from datetime import date, datetime
 
@@ -203,34 +204,54 @@ class ReceptionScreen(tk.Frame):
             temp_var.set(f"{t:.1f} °C")
             save_btn.config(state="normal", bg=config.COLOR_SUCCESS)
 
-        # Choisir un fournisseur = bouton 'boot' de l'appli officielle :
-        # on reveille le pistolet (la liaison est deja ouverte), puis on lit
-        # les mesures en continu -> chaque coup de gachette s'affiche direct.
+        # Choisir un fournisseur = bouton 'boot' de l'appli officielle : le
+        # pistolet est reveille (liaison deja ouverte). On NE capture PAS les
+        # relevés d'ambiance epars : on detecte la GACHETTE par la cadence des
+        # trames — pressee, le pistolet emet en rafale (~1/s) ; relachee, il se
+        # tait. On affiche la mesure en direct pendant la pression et on fige
+        # la valeur au relachement.
         if conn is not None:
-            conn.poll()    # vide d'eventuelles vieilles mesures
+            conn.poll()    # vide les vieilles mesures
             conn.arm()     # reveil du pistolet
+
+        burst = {"last": 0.0, "temp": None, "active": False}
+        GAP = 2.5  # secondes sans trame -> gachette relachee
 
         def poll_meas():
             if state["closed"]:
                 return
-            if conn is not None:
-                t = conn.poll()
-                if t is not None:
-                    set_temp(t)
-                    status_var.set("✓ Mesure reçue — visez à nouveau pour corriger,\n"
-                                   "ou enregistrez.")
-                    status.config(fg=config.COLOR_SUCCESS)
-                elif state["temp"] is None:
-                    if conn.status == ble_thermo.ST_CONNECTED:
-                        status_var.set("Visez le produit et appuyez sur la gâchette.")
-                        status.config(fg=config.COLOR_WARNING)
-                    elif conn.status == ble_thermo.ST_LOST:
-                        status_var.set("⚠ Pistolet hors ligne — rallumez-le,\n"
-                                       "ou saisissez manuellement.")
-                        status.config(fg=config.COLOR_DANGER)
-                    else:
-                        status_var.set("Connexion au pistolet en cours…")
-                        status.config(fg=config.COLOR_WARNING)
+            if conn is None:
+                top.after(150, poll_meas)
+                return
+            now = time.monotonic()
+            t = conn.poll()
+            if t is not None:
+                # une trame vient d'arriver
+                if burst["last"] and (now - burst["last"]) < GAP:
+                    # trames rapprochees = gachette pressee -> mesure en direct
+                    burst["active"] = True
+                    temp_var.set(f"{t:.1f} °C")
+                    status_var.set("Mesure en cours — relâchez la gâchette…")
+                    status.config(fg=config.COLOR_WARNING)
+                burst["last"] = now
+                burst["temp"] = t
+            elif burst["active"] and burst["last"] and (now - burst["last"]) > GAP:
+                # fin de rafale = gachette relachee -> on fige la valeur
+                burst["active"] = False
+                set_temp(burst["temp"])
+                status_var.set("✓ Mesure prête — Enregistrer, ou visez à nouveau.")
+                status.config(fg=config.COLOR_SUCCESS)
+            elif state["temp"] is None and not burst["active"]:
+                if conn.status == ble_thermo.ST_CONNECTED:
+                    status_var.set("Visez le produit et appuyez sur la gâchette.")
+                    status.config(fg=config.COLOR_WARNING)
+                elif conn.status == ble_thermo.ST_LOST:
+                    status_var.set("⚠ Pistolet hors ligne — rallumez-le,\n"
+                                   "ou saisissez manuellement.")
+                    status.config(fg=config.COLOR_DANGER)
+                else:
+                    status_var.set("Connexion au pistolet en cours…")
+                    status.config(fg=config.COLOR_WARNING)
             top.after(150, poll_meas)
 
         if conn is None:
