@@ -112,32 +112,23 @@ class ReceptionScreen(tk.Frame):
         self.after(500, self._poll_conn_status)
 
     def _wait_for_gun(self):
-        """Fenetre modale d'attente : bloque le choix du fournisseur tant que
-        le pistolet n'est pas connecte. Message rouge clignotant pendant la
-        recherche, vert a la connexion (puis fermeture auto)."""
+        """Overlay d'attente plein ecran : bloque le choix du fournisseur tant
+        que le pistolet n'est pas connecte. Message rouge clignotant pendant la
+        recherche, vert a la connexion (puis fermeture auto). Technique overlay
+        (cf. alarme temperature) = fiable, sans Toplevel/grab."""
         if not self.winfo_exists() or self.conn is None:
             return  # ecran ferme, ou pas de pistolet configure (saisie manuelle)
 
-        top = tk.Toplevel(self)
-        top.configure(bg=config.COLOR_BG)
-        top.overrideredirect(True)
-        style_popup(top)
-        w, h = 440, 240
-        x = (config.SCREEN_W - w) // 2
-        y = (config.SCREEN_H - h) // 2
-        top.geometry(f"{w}x{h}+{x}+{y}")
-        top.transient(self)
-        top.update_idletasks()
-        try:
-            top.grab_set()
-        except Exception:
-            pass
+        overlay = tk.Frame(self, bg=config.COLOR_BG)
+        overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+        overlay.lift()
 
-        tk.Label(top, text="Pistolet infrarouge", bg=config.COLOR_BG,
-                 fg=config.COLOR_FG, font=config.FONT_BIG).pack(pady=(22, 6))
-        msg = tk.Label(top, text="🔍 Recherche du pistolet…", bg=config.COLOR_BG,
-                       fg=config.COLOR_DANGER, font=config.FONT_TITLE)
-        msg.pack(pady=18)
+        tk.Label(overlay, text="Pistolet infrarouge", bg=config.COLOR_BG,
+                 fg=config.COLOR_FG, font=config.FONT_TITLE).pack(pady=(90, 12))
+        msg = tk.Label(overlay, text="🔍 Recherche du pistolet…",
+                       bg=config.COLOR_BG, fg=config.COLOR_DANGER,
+                       font=config.FONT_TITLE)
+        msg.pack(pady=20)
 
         st = {"closed": False, "on": True, "after_id": None}
 
@@ -145,46 +136,42 @@ class ReceptionScreen(tk.Frame):
             st["closed"] = True
             if st["after_id"] is not None:
                 try:
-                    top.after_cancel(st["after_id"])
+                    overlay.after_cancel(st["after_id"])
                 except Exception:
                     pass
-            try:
-                top.grab_release()
-            except Exception:
-                pass
-            top.destroy()
+            overlay.destroy()
 
         def go_back():
             close()
             self._back()
 
         def tick():
-            if st["closed"]:
+            if st["closed"] or not overlay.winfo_exists():
                 return
             status = self.conn.status if self.conn is not None else None
             if status == ble_thermo.ST_CONNECTED:
                 msg.config(text="✓ Pistolet connecté", fg=config.COLOR_SUCCESS)
-                # laisser l'operateur voir le vert, puis fermer
-                st["after_id"] = top.after(900, close)
+                st["on"] = True
+                st["after_id"] = overlay.after(900, close)  # voir le vert puis fermer
                 return
             elif status == ble_thermo.ST_LOST:
                 label = "⚠ Pistolet hors ligne — rallumez-le"
             else:
                 label = "🔍 Recherche du pistolet…"
-            # clignotement rouge (alternance visible / fondu sur le fond)
+            # clignotement : alternance rouge vif / fondu sur le fond
             st["on"] = not st["on"]
             msg.config(text=label,
                        fg=config.COLOR_DANGER if st["on"] else config.COLOR_BG)
-            st["after_id"] = top.after(500, tick)
+            st["after_id"] = overlay.after(500, tick)
 
-        btns = tk.Frame(top, bg=config.COLOR_BG)
-        btns.pack(side="bottom", fill="x", padx=12, pady=12)
+        btns = tk.Frame(overlay, bg=config.COLOR_BG)
+        btns.pack(pady=24)
         tk.Button(btns, text="← Retour", font=config.FONT_MED, bg=config.COLOR_CARD,
-                  fg="white", bd=0, command=go_back
-                  ).pack(side="left", expand=True, fill="x", padx=3, ipady=6)
+                  fg="white", bd=0, padx=16, pady=8, command=go_back
+                  ).pack(side="left", padx=6)
         tk.Button(btns, text="⌨ Saisie manuelle", font=config.FONT_MED,
-                  bg=config.COLOR_CARD, fg="white", bd=0, command=close
-                  ).pack(side="left", expand=True, fill="x", padx=3, ipady=6)
+                  bg=config.COLOR_CARD, fg="white", bd=0, padx=16, pady=8,
+                  command=close).pack(side="left", padx=6)
 
         tick()
 
