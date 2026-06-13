@@ -14,8 +14,10 @@ Chaque trame brute est loggee dans logs/ble_thermo.log.
 """
 import asyncio
 import logging
+import queue
 import re
 import struct
+import threading
 
 from . import config
 
@@ -242,3 +244,124 @@ def find_thermometer(timeout: float = 15.0):
     if not HAS_BLEAK:
         raise RuntimeError("bleak non installe (pip install bleak)")
     return asyncio.run(_find_async(timeout))
+
+
+# ---------- Connexion persistante (facon appli officielle) ----------
+
+# Etats de la liaison, lus par l'UI (chaine simple, acces atomique en CPython)
+ST_IDLE = "idle"
+ST_SCANNING = "scanning"
+ST_CONNECTING = "connecting"
+ST_CONNECTED = "connected"
+ST_LOST = "lost"
+
+
+class ThermoConnection:
+    """Connexion persistante au pistolet, comme l'appli officielle : on se
+    connecte UNE fois et on garde la liaison ouverte. Les mesures deviennent
+    instantanees — plus de scan ni de reconnexion a chaque releve.
+
+    Tourne dans un thread asyncio dedie ; l'UI lit l'etat par polling, donc
+    aucun thread ne touche Tkinter.
+
+    Cycle d'usage :
+        conn = ThermoConnection(mac); conn.start()
+        # .status passe a ST_CONNECTED quand la liaison est prete
+        conn.arm()       # = bouton 'boot' de l'appli officielle : reveil
+        t = conn.poll()  # derniere temperature recue (gachette), ou None
+        conn.disarm()    # arrete le reveil, liaison conservee
+        conn.stop()      # ferme tout en quittant l'ecran
+    """
+
+    def __init__(self, mac: str):
+        self.mac = mac.lower()
+        self.status = ST_IDLE
+        self._measurements = queue.Queue()
+        self._stop = threading.Event()
+        self._armed = threading.Event()
+        self._thread = None
+
+    # --- API thread-safe (appelee par l'UI) ---
+
+    def start(self):
+        if not HAS_BLEAK:
+            self.status = ST_LOST
+            return
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+        self._armed.clear()
+
+    def arm(self):
+        """Reveille le pistolet (envoi de CMD_START en boucle)."""
+        self._armed.set()
+
+    def disarm(self):
+        self._armed.clear()
+
+    def poll(self):
+        """Derniere temperature recue (float) ou None. Vide la file pour
+        ne garder que la mesure la plus recente."""
+        last = None
+        try:
+            while True:
+                last = self._measurements.get_nowait()
+        except queue.Empty:
+            pass
+        return last
+
+    # --- coeur asyncio (thread dedie) ---
+
+    def _handler(self, char, data):
+        raw = bytes(data)
+        parsed = parse_frame(raw)
+        logger.info("notify %s : %s -> %s", char.uuid, raw.hex(" "), parsed)
+        if parsed is not None:
+            self._measurements.put(parsed[0])
+
+    def _run(self):
+        # Tient le verrou BLE global pendant toute la vie de l'ecran Reception :
+        # empeche une autre operation BLE (auto-releve, detection) de perturber
+        # la liaison. La detection suspend d'abord cette connexion.
+        with config.BLE_LOCK:
+            try:
+                asyncio.run(self._main())
+            except Exception as e:
+                logger.warning("ThermoConnection arret sur erreur : %s", e)
+        self.status = ST_IDLE
+
+    async def _main(self):
+        while not self._stop.is_set():
+            self.status = ST_SCANNING
+            device = await _resolve_device(self.mac, deadline=12.0, cancel=self._stop)
+            if device is None:
+                continue  # re-scan tant que le pistolet n'apparait pas
+            self.status = ST_CONNECTING
+            try:
+                async with BleakClient(device, timeout=CONNECT_TIMEOUT) as client:
+                    await client.start_notify(CHAR_MEAS, self._handler)
+                    # Deverrouillage unique du flux (sinon le pistolet est muet)
+                    await client.write_gatt_char(CHAR_CMD, CMD_UNLOCK, response=False)
+                    self.status = ST_CONNECTED
+                    logger.info("connexion persistante etablie : %s", self.mac)
+                    # Maintien : tant qu'arme, on relance CMD_START (reveil)
+                    while not self._stop.is_set() and client.is_connected:
+                        if self._armed.is_set():
+                            try:
+                                await client.write_gatt_char(
+                                    CHAR_CMD, CMD_START, response=False)
+                            except Exception:
+                                break
+                        await asyncio.sleep(0.3)
+                    try:
+                        await client.write_gatt_char(CHAR_CMD, CMD_STOP, response=False)
+                    except Exception:
+                        pass
+            except Exception as e:
+                logger.info("liaison perdue (%s)", e)
+                if not self._stop.is_set():
+                    self.status = ST_LOST
+                    await asyncio.sleep(0.5)
+        self.status = ST_IDLE

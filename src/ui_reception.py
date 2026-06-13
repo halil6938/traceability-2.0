@@ -3,7 +3,7 @@ import threading
 import tkinter as tk
 from datetime import date, datetime
 
-from . import config, database
+from . import config, database, ble_thermo
 from .ui_common import text_popup, numpad_popup, style_popup, confirm, error
 
 # Verrou Bluetooth partage par toute l'appli (voir config.py)
@@ -27,6 +27,10 @@ class ReceptionScreen(tk.Frame):
         tk.Button(header, text="⚙ Fournisseurs", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4,
                   command=self._manage_suppliers).pack(side="right")
+        # Indicateur d'etat de la liaison au pistolet (mis a jour par polling)
+        self.conn_lbl = tk.Label(header, text="", bg=config.COLOR_BG,
+                                 fg=config.COLOR_MUTED, font=config.FONT_SMALL)
+        self.conn_lbl.pack(side="right", padx=10)
 
         body = tk.Frame(self, bg=config.COLOR_BG)
         body.pack(fill="both", expand=True, padx=12, pady=(0, 10))
@@ -54,6 +58,54 @@ class ReceptionScreen(tk.Frame):
 
         self._render_suppliers()
         self._render_today()
+
+        # Connexion persistante au pistolet : lancee des l'entree dans l'ecran
+        # (comme le demarrage de l'appli officielle), gardee ouverte tant qu'on
+        # reste en Reception -> les mesures deviennent instantanees.
+        self.conn = None
+        self._suspended = False
+        self._start_conn()
+        self._poll_conn_status()
+
+    # --- connexion persistante au pistolet ---
+
+    def _start_conn(self):
+        """Demarre la liaison persistante au pistolet (si MAC configuree)."""
+        mac = database.get_meta("reception_thermo_mac", "")
+        if mac and ble_thermo.HAS_BLEAK:
+            self.conn = ble_thermo.ThermoConnection(mac)
+            self.conn.start()
+        else:
+            self.conn = None
+        self._suspended = False
+
+    def _stop_conn(self):
+        """Coupe la liaison (libere le Bluetooth pour une autre operation)."""
+        if self.conn is not None:
+            self.conn.stop()
+            self.conn = None
+        self._suspended = True
+
+    def _poll_conn_status(self):
+        if not self.winfo_exists():
+            return
+        if self._suspended:
+            txt, color = "🌡 Pistolet en pause", config.COLOR_MUTED
+        elif self.conn is None:
+            mac = database.get_meta("reception_thermo_mac", "")
+            if not mac:
+                txt, color = "🌡 Pistolet non configuré", config.COLOR_MUTED
+            else:
+                txt, color = "🌡 Bluetooth indisponible", config.COLOR_DANGER
+        else:
+            txt, color = {
+                ble_thermo.ST_SCANNING: ("🔍 Recherche du pistolet…", config.COLOR_WARNING),
+                ble_thermo.ST_CONNECTING: ("🔗 Connexion au pistolet…", config.COLOR_WARNING),
+                ble_thermo.ST_CONNECTED: ("🌡 Pistolet connecté ✓", config.COLOR_SUCCESS),
+                ble_thermo.ST_LOST: ("⚠ Pistolet hors ligne", config.COLOR_DANGER),
+            }.get(self.conn.status, ("…", config.COLOR_MUTED))
+        self.conn_lbl.config(text=txt, fg=color)
+        self.after(500, self._poll_conn_status)
 
     # --- rendu ---
 
@@ -143,70 +195,47 @@ class ReceptionScreen(tk.Frame):
                  fg=config.COLOR_FG, font=("DejaVu Sans", 40, "bold")
                  ).pack(pady=8)
 
-        state = {"temp": None, "closed": False, "reading": False}
+        state = {"temp": None, "closed": False}
+        conn = self.conn
 
         def set_temp(t):
             state["temp"] = t
             temp_var.set(f"{t:.1f} °C")
             save_btn.config(state="normal", bg=config.COLOR_SUCCESS)
 
-        def read_ble():
-            mac = database.get_meta("reception_thermo_mac", "")
-            if not mac:
-                status_var.set("⚠ Aucun pistolet configuré (⚙ Fournisseurs)\n"
-                               "Utilisez la saisie manuelle.")
-                status.config(fg=config.COLOR_WARNING)
+        # Choisir un fournisseur = bouton 'boot' de l'appli officielle :
+        # on reveille le pistolet (la liaison est deja ouverte), puis on lit
+        # les mesures en continu -> chaque coup de gachette s'affiche direct.
+        if conn is not None:
+            conn.poll()    # vide d'eventuelles vieilles mesures
+            conn.arm()     # reveil du pistolet
+
+        def poll_meas():
+            if state["closed"]:
                 return
-            if state.get("reading"):
-                return  # lecture deja en cours pour ce popup
-            state["reading"] = True
-            cancel_evt = threading.Event()
-            state["cancel"] = cancel_evt
-            status_var.set("Recherche du pistolet...\n"
-                           "Visez le produit et APPUYEZ PLUSIEURS FOIS sur la "
-                           "gâchette jusqu'à la mesure.")
-            status.config(fg=config.COLOR_WARNING)
-
-            # Le thread BLE ne touche JAMAIS a l'UI (Tk n'est pas thread-safe) :
-            # il depose son resultat dans box, et l'UI vient le lire par polling.
-            box = {}
-
-            def do():
-                with _BLE_LOCK:
-                    if state["closed"] or cancel_evt.is_set():
-                        box["done"] = True
-                        return
-                    from . import ble_thermo
-                    try:
-                        box["temp"] = ble_thermo.read_temperature(
-                            mac, timeout=45.0, cancel=cancel_evt)
-                    except Exception as e:
-                        box["err"] = str(e)
-                box["done"] = True
-
-            def poll():
-                if state["closed"]:
-                    return
-                if not box.get("done"):
-                    top.after(200, poll)
-                    return
-                state["reading"] = False
-                temp, err = box.get("temp"), box.get("err")
-                if temp is not None:
-                    set_temp(temp)
-                    status_var.set("✓ Mesure reçue — vérifiez puis enregistrez")
+            if conn is not None:
+                t = conn.poll()
+                if t is not None:
+                    set_temp(t)
+                    status_var.set("✓ Mesure reçue — visez à nouveau pour corriger,\n"
+                                   "ou enregistrez.")
                     status.config(fg=config.COLOR_SUCCESS)
-                elif err:
-                    status_var.set(f"✗ Connexion impossible : {err}\n"
-                                   "Pistolet allumé et à portée ?")
-                    status.config(fg=config.COLOR_DANGER)
-                else:
-                    status_var.set("✗ Aucune mesure reçue — gâchette appuyée ?\n"
-                                   "Relisez ou saisissez manuellement.")
-                    status.config(fg=config.COLOR_DANGER)
+                elif state["temp"] is None:
+                    if conn.status == ble_thermo.ST_CONNECTED:
+                        status_var.set("Visez le produit et appuyez sur la gâchette.")
+                        status.config(fg=config.COLOR_WARNING)
+                    elif conn.status == ble_thermo.ST_LOST:
+                        status_var.set("⚠ Pistolet hors ligne — rallumez-le,\n"
+                                       "ou saisissez manuellement.")
+                        status.config(fg=config.COLOR_DANGER)
+                    else:
+                        status_var.set("Connexion au pistolet en cours…")
+                        status.config(fg=config.COLOR_WARNING)
+            top.after(150, poll_meas)
 
-            threading.Thread(target=do, daemon=True).start()
-            top.after(200, poll)
+        if conn is None:
+            status_var.set("Aucun pistolet configuré — saisie manuelle.")
+            status.config(fg=config.COLOR_WARNING)
 
         def manual():
             v = numpad_popup(top, "Température (°C)")
@@ -217,31 +246,24 @@ class ReceptionScreen(tk.Frame):
             except ValueError:
                 error(top, "Erreur", "Température invalide.")
 
-        def _stop_ble():
-            """Arrete immediatement la lecture BLE en cours, s'il y en a une."""
-            evt = state.get("cancel")
-            if evt is not None:
-                evt.set()
-
         def save():
             database.save_reception(supplier["id"], state["temp"])
             state["closed"] = True
-            _stop_ble()
+            if conn is not None:
+                conn.disarm()  # liaison conservee pour le fournisseur suivant
             top.destroy()
             self._render_today()
 
         def cancel():
             state["closed"] = True
-            _stop_ble()
+            if conn is not None:
+                conn.disarm()
             top.destroy()
 
         btns = tk.Frame(top, bg=config.COLOR_BG)
         btns.pack(side="bottom", fill="x", padx=12, pady=10)
         tk.Button(btns, text="Annuler", font=config.FONT_MED, bg=config.COLOR_CARD,
                   fg="white", bd=0, command=cancel
-                  ).pack(side="left", expand=True, fill="x", padx=3, ipady=8)
-        tk.Button(btns, text="🔄 Relire", font=config.FONT_MED, bg=config.COLOR_PRIMARY,
-                  fg="white", bd=0, command=read_ble
                   ).pack(side="left", expand=True, fill="x", padx=3, ipady=8)
         tk.Button(btns, text="⌨ Manuel", font=config.FONT_MED, bg=config.COLOR_CARD,
                   fg="white", bd=0, command=manual
@@ -251,12 +273,16 @@ class ReceptionScreen(tk.Frame):
                              state="disabled", command=save)
         save_btn.pack(side="left", expand=True, fill="x", padx=3, ipady=8)
 
-        read_ble()
+        poll_meas()
         self.wait_window(top)
 
     # --- gestion fournisseurs ---
 
     def _manage_suppliers(self):
+        # Suspend la liaison persistante : libere le Bluetooth pour une
+        # eventuelle detection du pistolet, et evite tout conflit d'adaptateur.
+        self._stop_conn()
+
         top = tk.Toplevel(self)
         top.configure(bg=config.COLOR_BG)
         top.transient(self)
@@ -426,7 +452,10 @@ class ReceptionScreen(tk.Frame):
                   command=config_thermo).pack(side="right", expand=True, fill="x", padx=3)
 
         self.wait_window(top)
+        # Reconnecte au pistolet (la MAC a peut-etre ete modifiee)
+        self._start_conn()
 
     def _back(self):
+        self._stop_conn()  # ferme la liaison persistante
         self.destroy()
         self.on_done()
