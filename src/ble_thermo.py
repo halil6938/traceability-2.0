@@ -295,7 +295,8 @@ class ThermoConnection:
         self._armed.clear()
 
     def arm(self):
-        """Reveille le pistolet (envoi de CMD_START en boucle)."""
+        """Marque le debut d'une prise de mesure (popup ouvert). N'envoie
+        aucune commande : le pistolet emet de lui-meme sur appui gachette."""
         self._armed.set()
 
     def disarm(self):
@@ -342,23 +343,16 @@ class ThermoConnection:
             try:
                 async with BleakClient(device, timeout=CONNECT_TIMEOUT) as client:
                     await client.start_notify(CHAR_MEAS, self._handler)
-                    # Deverrouillage unique du flux (sinon le pistolet est muet)
+                    # Deverrouillage unique (= bouton 'boot' de l'appli officielle)
                     await client.write_gatt_char(CHAR_CMD, CMD_UNLOCK, response=False)
                     self.status = ST_CONNECTED
                     logger.info("connexion persistante etablie : %s", self.mac)
-                    # Maintien : tant qu'arme, on relance CMD_START (reveil)
+                    # On N'ENVOIE PAS CMD_START : ce serait forcer le pistolet a
+                    # mesurer en continu. Apres UNLOCK, il emet de lui-meme une
+                    # rafale de trames quand on presse physiquement la gachette.
+                    # On maintient simplement la liaison ouverte.
                     while not self._stop.is_set() and client.is_connected:
-                        if self._armed.is_set():
-                            try:
-                                await client.write_gatt_char(
-                                    CHAR_CMD, CMD_START, response=False)
-                            except Exception:
-                                break
                         await asyncio.sleep(0.3)
-                    try:
-                        await client.write_gatt_char(CHAR_CMD, CMD_STOP, response=False)
-                    except Exception:
-                        pass
             except Exception as e:
                 logger.info("liaison perdue (%s)", e)
                 if not self._stop.is_set():
