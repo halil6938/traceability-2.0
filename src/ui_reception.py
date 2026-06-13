@@ -67,7 +67,9 @@ class ReceptionScreen(tk.Frame):
         self._suspended = False
         self._start_conn()
         self._poll_conn_status()
-        self._wait_for_gun()
+        # Differe la fenetre d'attente : l'ecran Reception doit d'abord etre
+        # dessine, sinon le popup modal ne s'affiche pas.
+        self.after(100, self._wait_for_gun)
 
     # --- connexion persistante au pistolet ---
 
@@ -113,8 +115,8 @@ class ReceptionScreen(tk.Frame):
         """Fenetre modale d'attente : bloque le choix du fournisseur tant que
         le pistolet n'est pas connecte. Message rouge clignotant pendant la
         recherche, vert a la connexion (puis fermeture auto)."""
-        if self.conn is None:
-            return  # pas de pistolet configure -> acces direct (saisie manuelle)
+        if not self.winfo_exists() or self.conn is None:
+            return  # ecran ferme, ou pas de pistolet configure (saisie manuelle)
 
         top = tk.Toplevel(self)
         top.configure(bg=config.COLOR_BG)
