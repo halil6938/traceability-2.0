@@ -172,14 +172,18 @@ class ReceptionScreen(tk.Frame):
         """Popup : lecture BLE du thermometre, fallback saisie manuelle."""
         top = tk.Toplevel(self)
         top.configure(bg=config.COLOR_BG)
-        top.transient(self)
-        top.grab_set()
         top.overrideredirect(True)
         style_popup(top)
         w, h = 460, 320
         x = (config.SCREEN_W - w) // 2
         y = (config.SCREEN_H - h) // 2
         top.geometry(f"{w}x{h}+{x}+{y}")
+        top.transient(self)
+        top.update_idletasks()      # rendre la fenetre affichable avant le grab
+        try:
+            top.grab_set()          # echoue si la fenetre n'est pas encore visible
+        except Exception:
+            pass
 
         tk.Label(top, text=f"Réception — {supplier['name']}",
                  bg=config.COLOR_BG, fg=config.COLOR_FG,
@@ -318,14 +322,18 @@ class ReceptionScreen(tk.Frame):
 
         top = tk.Toplevel(self)
         top.configure(bg=config.COLOR_BG)
-        top.transient(self)
-        top.grab_set()
         top.overrideredirect(True)
         style_popup(top)
         w, h = 520, 420
         x = (config.SCREEN_W - w) // 2
         y = (config.SCREEN_H - h) // 2
         top.geometry(f"{w}x{h}+{x}+{y}")
+        top.transient(self)
+        top.update_idletasks()
+        try:
+            top.grab_set()
+        except Exception:
+            pass
 
         def close_mgr():
             try:
@@ -402,14 +410,18 @@ class ReceptionScreen(tk.Frame):
         def config_thermo():
             cfg = tk.Toplevel(top)
             cfg.configure(bg=config.COLOR_BG)
-            cfg.transient(top)
-            cfg.grab_set()
             cfg.overrideredirect(True)
             style_popup(cfg)
             cw, ch = 460, 250
             cx = (config.SCREEN_W - cw) // 2
             cy = (config.SCREEN_H - ch) // 2
             cfg.geometry(f"{cw}x{ch}+{cx}+{cy}")
+            cfg.transient(top)
+            cfg.update_idletasks()
+            try:
+                cfg.grab_set()
+            except Exception:
+                pass
 
             def close_cfg():
                 try:
