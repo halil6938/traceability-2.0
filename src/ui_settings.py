@@ -74,7 +74,7 @@ class SettingsScreen(tk.Frame):
 
         actions2 = tk.Frame(self, bg=config.COLOR_BG)
         actions2.pack(fill="x", padx=20, pady=4)
-        make_button(actions2, "📡 Capteurs BLE", self._ble_config,
+        make_button(actions2, "📡 Capteurs temp.", self._ble_config,
                     bg=config.COLOR_CARD, font=config.FONT_MED
                     ).pack(side="left", expand=True, fill="x", padx=3)
         make_button(actions2, "📄 Export PDF du mois", self._export_pdf,
@@ -170,31 +170,41 @@ class SettingsScreen(tk.Frame):
             self._render()
 
     def _ble_config(self):
-        """Popup de configuration des capteurs BLE."""
-        from . import ble_reader
-
+        """Popup de configuration des capteurs de temperature (BLE + WiFi)."""
         top = tk.Toplevel(self)
         top.configure(bg=config.COLOR_BG)
-        top.transient(self)
-        top.grab_set()
         top.overrideredirect(True)
         style_popup(top)
 
         sensors = database.list_ble_sensors()
-        h = max(300, 80 + len(sensors) * 90 + 90)
+        h = max(340, 80 + len(sensors) * 90 + 140)
+        h = min(h, config.SCREEN_H - 10)
         w = 460
         x = (config.SCREEN_W - w) // 2
         y = (config.SCREEN_H - h) // 2
         top.geometry(f"{w}x{h}+{x}+{y}")
+        top.transient(self)
+        top.update_idletasks()
+        try:
+            top.grab_set()
+        except Exception:
+            pass
+
+        def close_top():
+            try:
+                top.grab_release()
+            except Exception:
+                pass
+            top.destroy()
 
         # Titre
         hdr = tk.Frame(top, bg=config.COLOR_BG)
         hdr.pack(fill="x", padx=10, pady=8)
-        tk.Label(hdr, text="Capteurs BLE", bg=config.COLOR_BG,
+        tk.Label(hdr, text="Capteurs température", bg=config.COLOR_BG,
                  fg=config.COLOR_FG, font=config.FONT_BIG).pack(side="left")
         tk.Button(hdr, text="✕", bg=config.COLOR_DANGER, fg="white",
                   font=config.FONT_MED, bd=0, padx=12,
-                  command=top.destroy).pack(side="right")
+                  command=close_top).pack(side="right")
 
         body = tk.Frame(top, bg=config.COLOR_BG)
         body.pack(fill="both", expand=True, padx=10)
@@ -211,9 +221,12 @@ class SettingsScreen(tk.Frame):
                 row = tk.Frame(body, bg=config.COLOR_CARD)
                 row.pack(fill="x", pady=3)
 
+                is_wifi = s.get("kind") == "wifi"
+                icon = "🌐" if is_wifi else "📡"
+
                 info_f = tk.Frame(row, bg=config.COLOR_CARD)
                 info_f.pack(side="left", fill="x", expand=True, padx=8, pady=6)
-                tk.Label(info_f, text=s["label"], bg=config.COLOR_CARD,
+                tk.Label(info_f, text=f"{icon} {s['label']}", bg=config.COLOR_CARD,
                          fg=config.COLOR_FG, font=config.FONT_MED,
                          anchor="w").pack(anchor="w")
                 tk.Label(info_f, text=s["mac"], bg=config.COLOR_CARD,
@@ -228,6 +241,18 @@ class SettingsScreen(tk.Frame):
 
                 def pick(sensor=s, devs=devices):
                     _pick_device(top, sensor, devs, render)
+
+                if is_wifi:
+                    def remove(sensor=s):
+                        if confirm(top, "Supprimer",
+                                   f"Supprimer le capteur '{sensor['label']}' ?"):
+                            database.delete_sensor(sensor["id"])
+                            render()
+
+                    tk.Button(row, text="🗑", font=config.FONT_SMALL,
+                              bg=config.COLOR_DANGER, fg="white", bd=0,
+                              width=3, command=remove
+                              ).pack(side="right", padx=(0, 6), pady=6)
 
                 tk.Button(row, text="Assigner", font=config.FONT_SMALL,
                           bg=config.COLOR_PRIMARY, fg="white", bd=0,
@@ -247,20 +272,20 @@ class SettingsScreen(tk.Frame):
 
         def read_now():
             cur_sensors = database.list_ble_sensors()
-            macs = [s["mac"] for s in cur_sensors if s["device_id"]]
-            if not macs:
+            if not any(s["device_id"] for s in cur_sensors):
                 status_var.set("⚠ Aucun capteur assigne a un appareil")
                 return
-            status_var.set("Lecture BLE en cours... (max 25 s)")
+            status_var.set("Lecture des capteurs en cours... (max 25 s)")
             status_lbl.config(fg=config.COLOR_WARNING)
 
-            # Le thread BLE ne touche pas a l'UI : resultat lu par polling
+            # Le thread capteurs ne touche pas a l'UI : resultat lu par polling
             box = {}
 
             def do():
                 with config.BLE_LOCK:
                     try:
-                        results = ble_reader.read_temperatures(macs)
+                        from . import sensor_reader
+                        results, rerr = sensor_reader.read_all(cur_sensors)
                         # Mode TEST : affichage seulement, rien en base
                         found = []
                         for s in cur_sensors:
@@ -272,6 +297,9 @@ class SettingsScreen(tk.Frame):
                         if found:
                             box["msg"] = "✓ Test (non enregistre) — " + "   ".join(found)
                             box["fg"] = config.COLOR_SUCCESS
+                        elif rerr:
+                            box["msg"] = f"Erreur: {rerr}"
+                            box["fg"] = config.COLOR_DANGER
                         else:
                             box["msg"] = "✗ Aucun capteur detecte (hors portee ?)"
                             box["fg"] = config.COLOR_DANGER
@@ -292,10 +320,128 @@ class SettingsScreen(tk.Frame):
             threading.Thread(target=do, daemon=True).start()
             top.after(200, poll)
 
-        tk.Button(bottom, text="🔍 Tester la lecture (sans enregistrer)",
+        def ask_tuya_keys():
+            """Saisie (ou re-saisie) des cles cloud Tuya."""
+            from . import tuya_reader
+            cur = tuya_reader.get_creds() or {}
+            access_id = text_popup(top, "Tuya Access ID",
+                                   initial=cur.get("access_id", ""))
+            if not access_id:
+                return None
+            secret = text_popup(top, "Tuya Access Secret",
+                                initial=cur.get("secret", ""))
+            if not secret:
+                return None
+            tuya_reader.set_creds(access_id, secret)
+            return tuya_reader.get_creds()
+
+        def add_wifi():
+            """Liste les appareils du cloud Tuya et ajoute celui choisi."""
+            from . import tuya_reader
+            if not tuya_reader.HAS_TINYTUYA:
+                status_var.set("✗ tinytuya non installe "
+                               "(sudo pip3 install --break-system-packages tinytuya)")
+                status_lbl.config(fg=config.COLOR_DANGER)
+                return
+            creds = tuya_reader.get_creds()
+            if creds is None:
+                creds = ask_tuya_keys()
+                if creds is None:
+                    return
+            status_var.set("Interrogation du cloud Tuya…")
+            status_lbl.config(fg=config.COLOR_WARNING)
+            box = {}
+
+            def do():
+                try:
+                    box["devs"] = tuya_reader.list_cloud_devices(creds)
+                except Exception as e:
+                    box["err"] = str(e)
+                box["done"] = True
+
+            def poll():
+                if not top.winfo_exists():
+                    return
+                if not box.get("done"):
+                    top.after(200, poll)
+                    return
+                if "err" in box:
+                    status_var.set(f"✗ {box['err']}\n(🔑 pour re-saisir les cles)")
+                    status_lbl.config(fg=config.COLOR_DANGER)
+                    return
+                devs = box["devs"]
+                if not devs:
+                    status_var.set("✗ Aucun appareil lie au projet Tuya")
+                    status_lbl.config(fg=config.COLOR_DANGER)
+                    return
+                status_var.set("")
+                existing = {s["mac"].lower() for s in database.list_ble_sensors()}
+
+                pick = tk.Toplevel(top)
+                pick.configure(bg=config.COLOR_BG)
+                pick.overrideredirect(True)
+                style_popup(pick, config.COLOR_PRIMARY)
+                ph = min(90 + len(devs) * 58, config.SCREEN_H - 10)
+                pw = 400
+                pick.geometry(f"{pw}x{ph}+{(config.SCREEN_W - pw) // 2}"
+                              f"+{(config.SCREEN_H - ph) // 2}")
+                pick.transient(top)
+                pick.update_idletasks()
+                try:
+                    pick.grab_set()
+                except Exception:
+                    pass
+
+                def close_pick():
+                    try:
+                        pick.grab_release()
+                    except Exception:
+                        pass
+                    pick.destroy()
+
+                tk.Label(pick, text="Choisir le capteur a ajouter :",
+                         bg=config.COLOR_BG, fg=config.COLOR_FG,
+                         font=config.FONT_MED).pack(pady=8)
+
+                def choose(dev):
+                    label = (dev["name"] or "Capteur WiFi")[:24]
+                    database.add_sensor(dev["id"].lower(), label, "wifi")
+                    close_pick()
+                    render()
+                    status_var.set(f"✓ '{label}' ajoute — assignez-le a un appareil")
+                    status_lbl.config(fg=config.COLOR_SUCCESS)
+
+                for dev in devs:
+                    already = dev["id"].lower() in existing
+                    txt = f"{dev['name']}" + ("   (deja ajoute)" if already else "")
+                    b = tk.Button(pick, text=txt, font=config.FONT_MED,
+                                  bg=config.COLOR_CARD, fg=config.COLOR_FG, bd=0,
+                                  padx=12, pady=8,
+                                  command=(lambda d=dev: choose(d)))
+                    if already:
+                        b.config(state="disabled", fg=config.COLOR_MUTED)
+                    b.pack(fill="x", padx=16, pady=2)
+
+                tk.Button(pick, text="Annuler", font=config.FONT_SMALL,
+                          bg=config.COLOR_DANGER, fg="white", bd=0, pady=6,
+                          command=close_pick).pack(fill="x", padx=16, pady=(6, 8))
+
+            threading.Thread(target=do, daemon=True).start()
+            top.after(200, poll)
+
+        btn_row = tk.Frame(bottom, bg=config.COLOR_BG)
+        btn_row.pack(fill="x")
+        tk.Button(btn_row, text="🔍 Tester la lecture",
                   font=config.FONT_MED,
                   bg=config.COLOR_PRIMARY, fg="white", bd=0, padx=12, pady=8,
-                  command=read_now).pack(fill="x")
+                  command=read_now).pack(side="left", expand=True, fill="x", padx=(0, 3))
+        tk.Button(btn_row, text="🌐 Ajouter WiFi",
+                  font=config.FONT_MED,
+                  bg=config.COLOR_CARD, fg="white", bd=0, padx=12, pady=8,
+                  command=add_wifi).pack(side="left", expand=True, fill="x", padx=3)
+        tk.Button(btn_row, text="🔑", font=config.FONT_MED,
+                  bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=8,
+                  command=ask_tuya_keys).pack(side="left", padx=(3, 0))
 
         self.wait_window(top)
 

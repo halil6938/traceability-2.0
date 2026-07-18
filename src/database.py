@@ -78,6 +78,13 @@ def init_db():
                 (mac, label),
             )
 
+        # Migration : type de capteur ('ble' ou 'wifi' = Tuya cloud).
+        # Pour un capteur wifi, la colonne mac contient le Device ID Tuya.
+        cols = [r[1] for r in c.execute("PRAGMA table_info(ble_sensors)").fetchall()]
+        if "kind" not in cols:
+            c.execute("ALTER TABLE ble_sensors "
+                      "ADD COLUMN kind TEXT NOT NULL DEFAULT 'ble'")
+
 
 @contextmanager
 def connect():
@@ -284,10 +291,11 @@ def receptions_in_range(start: date, end: date):
 # ---------- Capteurs BLE ----------
 
 def list_ble_sensors():
-    """Retourne les capteurs BLE avec le nom de l'appareil associe."""
+    """Retourne les capteurs (BLE et WiFi) avec le nom de l'appareil associe."""
     with connect() as c:
         rows = c.execute("""
-            SELECT b.id, b.mac, b.label, b.device_id, d.name AS device_name
+            SELECT b.id, b.mac, b.label, b.kind, b.device_id,
+                   d.name AS device_name
             FROM ble_sensors b
             LEFT JOIN devices d ON d.id = b.device_id
             ORDER BY b.id
@@ -296,12 +304,26 @@ def list_ble_sensors():
 
 
 def update_ble_sensor(sensor_id: int, label: str, device_id):
-    """Met a jour le label et l'appareil associe d'un capteur BLE."""
+    """Met a jour le label et l'appareil associe d'un capteur."""
     with connect() as c:
         c.execute(
             "UPDATE ble_sensors SET label=?, device_id=? WHERE id=?",
             (label, device_id, sensor_id),
         )
+
+
+def add_sensor(mac: str, label: str, kind: str = "ble"):
+    """Ajoute un capteur. Pour kind='wifi', mac = Device ID Tuya."""
+    with connect() as c:
+        c.execute(
+            "INSERT INTO ble_sensors(mac, label, kind) VALUES (?,?,?)",
+            (mac, label, kind),
+        )
+
+
+def delete_sensor(sensor_id: int):
+    with connect() as c:
+        c.execute("DELETE FROM ble_sensors WHERE id=?", (sensor_id,))
 
 
 # ---------- Meta ----------

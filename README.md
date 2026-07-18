@@ -3,7 +3,7 @@
 Application de traçabilité pour Raspberry Pi 3 (écran tactile 5" 800×480, **paysage**) :
 
 - 📷 **Scan ticket** : détection auto d'étiquettes blanches sur fond contrasté, capture automatique.
-- 🌡 **Relevés de température** : saisie tactile quotidienne par appareil (frigo/congélateur) avec alerte hors seuils.
+- 🌡 **Relevés de température** : saisie tactile quotidienne par appareil (frigo/congélateur) avec alerte hors seuils. Capteurs **BLE** (Brifit WS07) et **WiFi Tuya** (lecture via le cloud Smart Life — nécessite des clés API sur iot.tuya.com ; ⚠ le plan gratuit « Trial » expire tous les 6 mois, à renouveler sur iot.tuya.com si les lectures WiFi tombent en erreur d'autorisation).
 - 📦 **Réception** : relevé de température des produits livrés par fournisseur, via thermomètre Bluetooth (pistolet IR HoldPeak HP-985C-APP) ou saisie manuelle.
 - 📊 **Historique** mensuel consultable et modifiable (tickets, températures, réceptions).
 - 📄 **Export PDF** par mois sur clé USB (températures + réceptions).
@@ -24,6 +24,9 @@ traceability/
 │   ├── ui_common.py          # widgets + clavier tactile
 │   ├── ui_setup.py           # wizard premier lancement
 │   ├── ble_thermo.py         # pistolet IR HoldPeak HP-985C-APP (BLE)
+│   ├── ble_reader.py         # capteurs frigo BLE (Brifit WS07)
+│   ├── tuya_reader.py        # capteurs frigo WiFi Tuya (cloud Smart Life)
+│   ├── sensor_reader.py      # lecture combinee BLE + WiFi
 │   ├── ui_main.py            # menu principal + routeur
 │   ├── ui_temperature.py     # saisie du jour
 │   ├── ui_reception.py       # réception fournisseurs + lecture pistolet

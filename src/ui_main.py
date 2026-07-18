@@ -94,14 +94,13 @@ class App(tk.Tk):
         self.after(60_000, self._ble_tick)
 
     def _do_ble_auto(self):
-        from . import ble_reader
+        from . import sensor_reader
         sensors = database.list_ble_sensors()
-        macs = [s["mac"] for s in sensors if s["device_id"]]
-        if not macs:
+        if not any(s["device_id"] for s in sensors):
             return
         try:
             with config.BLE_LOCK:
-                results = ble_reader.read_temperatures(macs)
+                results, _ = sensor_reader.read_all(sensors)
         except Exception:
             return
         today = date.today()

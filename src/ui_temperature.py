@@ -137,15 +137,14 @@ class TemperatureScreen(tk.Frame):
 
     def _start_ble_scan(self):
         sensors = database.list_ble_sensors()
-        macs = [s["mac"] for s in sensors if s["device_id"]]
-        if not macs:
-            self.status_var.set("Aucun capteur BLE configure (voir Parametres)")
+        if not any(s["device_id"] for s in sensors):
+            self.status_var.set("Aucun capteur configure (voir Parametres)")
             self.status_lbl.config(fg=config.COLOR_MUTED)
             return
-        self.status_var.set("Lecture BLE en cours...")
+        self.status_var.set("Lecture des capteurs en cours...")
         self.status_lbl.config(fg=config.COLOR_WARNING)
 
-        # Le thread BLE ne touche JAMAIS a l'UI (Tk n'est pas thread-safe) :
+        # Le thread capteurs ne touche JAMAIS a l'UI (Tk n'est pas thread-safe) :
         # il depose son resultat dans box, l'UI le lit par polling.
         cancel = self._ble_cancel
         box = {}
@@ -155,9 +154,10 @@ class TemperatureScreen(tk.Frame):
                 if cancel.is_set():
                     box["done"] = True
                     return
-                from . import ble_reader
+                from . import sensor_reader
                 try:
-                    box["results"] = ble_reader.read_temperatures(macs, cancel=cancel)
+                    box["results"], box["err"] = sensor_reader.read_all(
+                        sensors, cancel=cancel)
                 except Exception as e:
                     box["err"] = str(e)
             box["done"] = True
@@ -168,11 +168,13 @@ class TemperatureScreen(tk.Frame):
             if not box.get("done"):
                 self.after(200, poll)
                 return
-            if "results" in box:
+            if box.get("results"):
                 self._apply_results(sensors, box["results"])
-            elif "err" in box:
-                self.status_var.set(f"Erreur BLE : {box['err']}")
+            elif box.get("err"):
+                self.status_var.set(f"Erreur capteurs : {box['err']}")
                 self.status_lbl.config(fg=config.COLOR_DANGER)
+            else:
+                self._apply_results(sensors, {})
 
         threading.Thread(target=do, daemon=True).start()
         self.after(200, poll)
