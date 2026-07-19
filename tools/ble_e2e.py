@@ -2,7 +2,6 @@
 Affiche chaque etape avec horodatage pour localiser une eventuelle panne."""
 import asyncio
 import sys
-import time
 from datetime import datetime
 from pathlib import Path
 

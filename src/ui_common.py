@@ -43,10 +43,6 @@ def make_button(master, text, command, bg=None, fg="white", font=None, **kw):
     )
 
 
-def make_card(master, **kw):
-    return tk.Frame(master, bg=config.COLOR_CARD, **kw)
-
-
 def style_popup(top, color=None):
     """Cadre visible autour d'un popup modal pour le distinguer de la fenetre
     qui se trouve derriere (pas de decoration native car overrideredirect)."""

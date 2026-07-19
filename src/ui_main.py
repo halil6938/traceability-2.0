@@ -3,7 +3,6 @@ import tkinter as tk
 import threading
 from datetime import date, datetime, timedelta
 from . import config, database, usb_manager
-from .ui_common import make_button
 from .camera_scan import CameraScanScreen
 from .ui_temperature import TemperatureScreen
 from .ui_history import HistoryScreen

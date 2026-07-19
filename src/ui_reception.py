@@ -5,10 +5,8 @@ import tkinter as tk
 from datetime import date, datetime
 
 from . import config, database, ble_thermo
-from .ui_common import text_popup, numpad_popup, style_popup, confirm, error
-
-# Verrou Bluetooth partage par toute l'appli (voir config.py)
-_BLE_LOCK = config.BLE_LOCK
+from .ui_common import (text_popup, numpad_popup, confirm, error,
+                        open_modal, close_modal)
 
 
 class ReceptionScreen(tk.Frame):
@@ -237,20 +235,7 @@ class ReceptionScreen(tk.Frame):
 
     def _measure(self, supplier):
         """Popup : lecture BLE du thermometre, fallback saisie manuelle."""
-        top = tk.Toplevel(self)
-        top.configure(bg=config.COLOR_BG)
-        top.overrideredirect(True)
-        style_popup(top)
-        w, h = 460, 320
-        x = (config.SCREEN_W - w) // 2
-        y = (config.SCREEN_H - h) // 2
-        top.geometry(f"{w}x{h}+{x}+{y}")
-        top.transient(self)
-        top.update_idletasks()      # rendre la fenetre affichable avant le grab
-        try:
-            top.grab_set()          # echoue si la fenetre n'est pas encore visible
-        except Exception:
-            pass
+        top = open_modal(self, 460, 320)
 
         tk.Label(top, text=f"Réception — {supplier['name']}",
                  bg=config.COLOR_BG, fg=config.COLOR_FG,
@@ -275,15 +260,13 @@ class ReceptionScreen(tk.Frame):
             temp_var.set(f"{t:.1f} °C")
             save_btn.config(state="normal", bg=config.COLOR_SUCCESS)
 
-        # Choisir un fournisseur = bouton 'boot' de l'appli officielle : le
-        # pistolet est reveille (liaison deja ouverte). On NE capture PAS les
+        # La liaison au pistolet est deja ouverte. On NE capture PAS les
         # relevés d'ambiance epars : on detecte la GACHETTE par la cadence des
         # trames — pressee, le pistolet emet en rafale (~1/s) ; relachee, il se
         # tait. On affiche la mesure en direct pendant la pression et on fige
         # la valeur au relachement.
         if conn is not None:
             conn.poll()    # vide les vieilles mesures
-            conn.arm()     # reveil du pistolet
 
         burst = {"last": 0.0, "temp": None, "active": False}
         GAP = 2.5  # secondes sans trame -> gachette relachee
@@ -345,16 +328,7 @@ class ReceptionScreen(tk.Frame):
                     top.after_cancel(state["after_id"])
                 except Exception:
                     pass
-            if conn is not None:
-                conn.disarm()  # liaison conservee pour le fournisseur suivant
-            # Liberer explicitement le grab AVANT de detruire : sinon, sur le
-            # Pi (X11 + overrideredirect), la capture clavier/souris reste
-            # active et l'ecran sous-jacent parait gele.
-            try:
-                top.grab_release()
-            except Exception:
-                pass
-            top.destroy()
+            close_modal(top)  # liaison pistolet conservee pour la suite
 
         def save():
             database.save_reception(supplier["id"], state["temp"])
@@ -387,27 +361,10 @@ class ReceptionScreen(tk.Frame):
         # eventuelle detection du pistolet, et evite tout conflit d'adaptateur.
         self._stop_conn()
 
-        top = tk.Toplevel(self)
-        top.configure(bg=config.COLOR_BG)
-        top.overrideredirect(True)
-        style_popup(top)
-        w, h = 520, 420
-        x = (config.SCREEN_W - w) // 2
-        y = (config.SCREEN_H - h) // 2
-        top.geometry(f"{w}x{h}+{x}+{y}")
-        top.transient(self)
-        top.update_idletasks()
-        try:
-            top.grab_set()
-        except Exception:
-            pass
+        top = open_modal(self, 520, 420)
 
         def close_mgr():
-            try:
-                top.grab_release()
-            except Exception:
-                pass
-            top.destroy()
+            close_modal(top)
 
         hdr = tk.Frame(top, bg=config.COLOR_BG)
         hdr.pack(fill="x", padx=10, pady=8)
@@ -475,27 +432,10 @@ class ReceptionScreen(tk.Frame):
             self._render_suppliers()
 
         def config_thermo():
-            cfg = tk.Toplevel(top)
-            cfg.configure(bg=config.COLOR_BG)
-            cfg.overrideredirect(True)
-            style_popup(cfg)
-            cw, ch = 460, 250
-            cx = (config.SCREEN_W - cw) // 2
-            cy = (config.SCREEN_H - ch) // 2
-            cfg.geometry(f"{cw}x{ch}+{cx}+{cy}")
-            cfg.transient(top)
-            cfg.update_idletasks()
-            try:
-                cfg.grab_set()
-            except Exception:
-                pass
+            cfg = open_modal(top, 460, 250)
 
             def close_cfg():
-                try:
-                    cfg.grab_release()
-                except Exception:
-                    pass
-                cfg.destroy()
+                close_modal(cfg)
 
             tk.Label(cfg, text="Pistolet Bluetooth", bg=config.COLOR_BG,
                      fg=config.COLOR_FG, font=config.FONT_BIG).pack(pady=(12, 2))
@@ -521,8 +461,7 @@ class ReceptionScreen(tk.Frame):
                 box = {}
 
                 def do():
-                    with _BLE_LOCK:
-                        from . import ble_thermo
+                    with config.BLE_LOCK:
                         try:
                             box["found"] = ble_thermo.find_thermometer()
                         except Exception as e:

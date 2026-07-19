@@ -4,13 +4,12 @@ import sys
 import threading
 from datetime import date
 from . import config, database, pdf_export
-from .ui_common import (make_button, text_popup, numpad_popup, style_popup,
-                        info, confirm, error)
+from .ui_common import (make_button, text_popup, numpad_popup,
+                        info, confirm, error, open_modal, close_modal)
 
 
 def _pick_device(parent, sensor, devices, on_done):
     """Popup de selection d'un appareil pour un capteur."""
-    from .ui_common import open_modal, close_modal
     h = min(90 + len(devices) * 54 + 54, 400)
     pick = open_modal(parent, 380, h, config.COLOR_SUCCESS)
 
@@ -138,10 +137,10 @@ class SettingsScreen(tk.Frame):
         name = text_popup(self, "Nom de l'appareil", initial=d["name"])
         if not name:
             return
-        tmin = numpad_popup(self, f"MIN (°C)", initial=f"{d['temp_min']:g}")
+        tmin = numpad_popup(self, "MIN (°C)", initial=f"{d['temp_min']:g}")
         if tmin is None or tmin == "":
             return
-        tmax = numpad_popup(self, f"MAX (°C)", initial=f"{d['temp_max']:g}")
+        tmax = numpad_popup(self, "MAX (°C)", initial=f"{d['temp_max']:g}")
         if tmax is None or tmax == "":
             return
         try:
@@ -163,31 +162,13 @@ class SettingsScreen(tk.Frame):
 
     def _ble_config(self):
         """Popup de configuration des capteurs de temperature (BLE + WiFi)."""
-        top = tk.Toplevel(self)
-        top.configure(bg=config.COLOR_BG)
-        top.overrideredirect(True)
-        style_popup(top)
-
         sensors = database.list_ble_sensors()
         h = max(340, 80 + len(sensors) * 90 + 140)
         h = min(h, config.SCREEN_H - 10)
-        w = 460
-        x = (config.SCREEN_W - w) // 2
-        y = (config.SCREEN_H - h) // 2
-        top.geometry(f"{w}x{h}+{x}+{y}")
-        top.transient(self)
-        top.update_idletasks()
-        try:
-            top.grab_set()
-        except Exception:
-            pass
+        top = open_modal(self, 460, h)
 
         def close_top():
-            try:
-                top.grab_release()
-            except Exception:
-                pass
-            top.destroy()
+            close_modal(top)
 
         # Titre
         hdr = tk.Frame(top, bg=config.COLOR_BG)
@@ -372,27 +353,11 @@ class SettingsScreen(tk.Frame):
                 status_var.set("")
                 existing = {s["mac"].lower() for s in database.list_ble_sensors()}
 
-                pick = tk.Toplevel(top)
-                pick.configure(bg=config.COLOR_BG)
-                pick.overrideredirect(True)
-                style_popup(pick, config.COLOR_PRIMARY)
                 ph = min(90 + len(devs) * 58, config.SCREEN_H - 10)
-                pw = 400
-                pick.geometry(f"{pw}x{ph}+{(config.SCREEN_W - pw) // 2}"
-                              f"+{(config.SCREEN_H - ph) // 2}")
-                pick.transient(top)
-                pick.update_idletasks()
-                try:
-                    pick.grab_set()
-                except Exception:
-                    pass
+                pick = open_modal(top, 400, ph, config.COLOR_PRIMARY)
 
                 def close_pick():
-                    try:
-                        pick.grab_release()
-                    except Exception:
-                        pass
-                    pick.destroy()
+                    close_modal(pick)
 
                 tk.Label(pick, text="Choisir le capteur a ajouter :",
                          bg=config.COLOR_BG, fg=config.COLOR_FG,

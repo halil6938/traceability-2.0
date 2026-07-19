@@ -34,11 +34,12 @@ CHECKSUM_BASE = 0x64
 CHAR_MEAS = "0000ffb2-0000-1000-8000-00805f9b34fb"
 CHAR_CMD = "0000ffb1-0000-1000-8000-00805f9b34fb"
 # Commandes retro-ingenierees depuis l'appli officielle (sur FFB1, sans reponse).
-# Sequence observee : CMD_UNLOCK une fois, puis CMD_START en boucle -> le flux
-# de mesures (FFB2) ne demarre QU'APRES CMD_UNLOCK.
+# L'appli n'envoie QUE CMD_UNLOCK (a la connexion) : le pistolet emet ensuite
+# de lui-meme une rafale de trames a chaque appui gachette. CMD_START/CMD_STOP
+# (mesure continue forcee) sont conserves pour reference et tools/ble_e2e.py.
 CMD_UNLOCK = bytes.fromhex("acfffe150100cce0")  # deverrouille le flux
-CMD_START = bytes.fromhex("bc20000222")         # demande/relance les mesures
-CMD_STOP = bytes.fromhex("bc21000021")          # arrete le flux
+CMD_START = bytes.fromhex("bc20000222")         # force la mesure continue
+CMD_STOP = bytes.fromhex("bc21000021")          # arrete la mesure continue
 
 # Detection : nom GATT/advertising, ou service vendeur annonce
 NAME_HINTS = ("985", "holdpeak", "hp-9", "swan")
@@ -136,87 +137,6 @@ async def _resolve_device(mac: str, deadline: float, cancel=None):
     return box.get("dev")
 
 
-async def _read_async(mac: str, timeout: float, cancel=None):
-    got = asyncio.Event()
-    result = {}
-
-    def handler(char, data):
-        raw = bytes(data)
-        parsed = parse_frame(raw)
-        logger.info("notify %s : %s -> %s", char.uuid, raw.hex(" "), parsed)
-        if parsed is not None and not got.is_set():
-            result["temp"] = parsed[0]
-            got.set()
-
-    # Phase 1 : attendre que l'operateur reveille le pistolet (gachette)
-    target = await _resolve_device(mac, deadline=timeout, cancel=cancel)
-    if target is None:
-        logger.info("pistolet introuvable (timeout ou annulation)")
-        return None
-    async with BleakClient(target, timeout=CONNECT_TIMEOUT) as client:
-        # S'abonner aux mesures (FFB2) ; fallback : toutes les notify connues
-        subscribed = []
-        meas_char = client.services.get_characteristic(CHAR_MEAS)
-        targets = [meas_char] if meas_char else [
-            ch for s in client.services for ch in s.characteristics
-            if "notify" in ch.properties or "indicate" in ch.properties
-        ]
-        for char in targets:
-            try:
-                await client.start_notify(char, handler)
-                subscribed.append(char)
-            except Exception as e:
-                logger.warning("start_notify %s : %s", char.uuid, e)
-        if not subscribed:
-            raise RuntimeError("Aucune characteristic notify sur ce peripherique")
-
-        # Demarrer le flux : l'appli officielle deverrouille avec CMD_UNLOCK
-        # puis relance CMD_START en boucle. Sans CMD_UNLOCK, le pistolet reste
-        # muet. On reproduit cette sequence tant qu'aucune mesure n'arrive.
-        async def pump_start():
-            try:
-                await client.write_gatt_char(CHAR_CMD, CMD_UNLOCK, response=False)
-            except Exception as e:
-                logger.warning("ecriture CMD_UNLOCK : %s", e)
-                return
-            while not got.is_set():
-                try:
-                    await client.write_gatt_char(CHAR_CMD, CMD_START, response=False)
-                except Exception as e:
-                    logger.warning("ecriture CMD_START : %s", e)
-                    return
-                await asyncio.sleep(0.3)
-
-        logger.info("connecte a %s, %d notify, envoi CMD_UNLOCK + CMD_START",
-                    mac, len(subscribed))
-        pumper = asyncio.create_task(pump_start())
-        try:
-            await _wait_event(got, timeout, cancel)
-        finally:
-            pumper.cancel()
-            try:
-                await client.write_gatt_char(CHAR_CMD, CMD_STOP, response=False)
-            except Exception:
-                pass
-            for char in subscribed:
-                try:
-                    await client.stop_notify(char)
-                except Exception:
-                    pass
-    return result.get("temp")
-
-
-def read_temperature(mac: str, timeout: float = 30.0, cancel=None):
-    """Connexion GATT au pistolet et attente d'une mesure (gachette).
-    cancel : threading.Event optionnel — des qu'il est leve, la lecture
-    s'arrete proprement en moins d'une seconde (scanner stoppe, deconnexion).
-    Retourne la temperature en C, ou None si rien recu avant timeout.
-    Leve RuntimeError si bleak absent, BleakError si connexion impossible."""
-    if not HAS_BLEAK:
-        raise RuntimeError("bleak non installe (pip install bleak)")
-    return asyncio.run(_read_async(mac, timeout, cancel))
-
-
 async def _find_async(timeout: float):
     found = await BleakScanner.discover(timeout=timeout, return_adv=True)
     best = None  # (rssi, mac, label)
@@ -267,9 +187,7 @@ class ThermoConnection:
     Cycle d'usage :
         conn = ThermoConnection(mac); conn.start()
         # .status passe a ST_CONNECTED quand la liaison est prete
-        conn.arm()       # = bouton 'boot' de l'appli officielle : reveil
         t = conn.poll()  # derniere temperature recue (gachette), ou None
-        conn.disarm()    # arrete le reveil, liaison conservee
         conn.stop()      # ferme tout en quittant l'ecran
     """
 
@@ -278,7 +196,6 @@ class ThermoConnection:
         self.status = ST_IDLE
         self._measurements = queue.Queue()
         self._stop = threading.Event()
-        self._armed = threading.Event()
         self._thread = None
 
     # --- API thread-safe (appelee par l'UI) ---
@@ -292,15 +209,6 @@ class ThermoConnection:
 
     def stop(self):
         self._stop.set()
-        self._armed.clear()
-
-    def arm(self):
-        """Marque le debut d'une prise de mesure (popup ouvert). N'envoie
-        aucune commande : le pistolet emet de lui-meme sur appui gachette."""
-        self._armed.set()
-
-    def disarm(self):
-        self._armed.clear()
 
     def poll(self):
         """Derniere temperature recue (float) ou None. Vide la file pour

@@ -3,7 +3,7 @@ import tkinter as tk
 from datetime import date, datetime
 from calendar import monthrange
 from . import config, database, pdf_export
-from .ui_common import make_button, numpad_popup, info, error, confirm
+from .ui_common import numpad_popup, info, error, confirm
 
 MONTHS = ["Janvier", "Fevrier", "Mars", "Avril", "Mai", "Juin",
           "Juillet", "Aout", "Septembre", "Octobre", "Novembre", "Decembre"]
