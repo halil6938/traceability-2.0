@@ -9,18 +9,10 @@ from .ui_common import (make_button, text_popup, numpad_popup, style_popup,
 
 
 def _pick_device(parent, sensor, devices, on_done):
-    """Popup de selection d'un appareil pour un capteur BLE."""
-    pick = tk.Toplevel(parent)
-    pick.configure(bg=config.COLOR_BG)
-    pick.transient(parent)
-    pick.grab_set()
-    pick.overrideredirect(True)
-    style_popup(pick, config.COLOR_SUCCESS)
+    """Popup de selection d'un appareil pour un capteur."""
+    from .ui_common import open_modal, close_modal
     h = min(90 + len(devices) * 54 + 54, 400)
-    w = 380
-    x = (config.SCREEN_W - w) // 2
-    y = (config.SCREEN_H - h) // 2
-    pick.geometry(f"{w}x{h}+{x}+{y}")
+    pick = open_modal(parent, 380, h, config.COLOR_SUCCESS)
 
     tk.Label(pick, text=f"Assigner '{sensor['label']}' a :",
              bg=config.COLOR_BG, fg=config.COLOR_FG,
@@ -28,7 +20,7 @@ def _pick_device(parent, sensor, devices, on_done):
 
     def choose(device_id):
         database.update_ble_sensor(sensor["id"], sensor["label"], device_id)
-        pick.destroy()
+        close_modal(pick)
         on_done()
 
     for d in devices:
@@ -224,23 +216,16 @@ class SettingsScreen(tk.Frame):
                 is_wifi = s.get("kind") == "wifi"
                 icon = "🌐" if is_wifi else "📡"
 
-                info_f = tk.Frame(row, bg=config.COLOR_CARD)
-                info_f.pack(side="left", fill="x", expand=True, padx=8, pady=6)
-                tk.Label(info_f, text=f"{icon} {s['label']}", bg=config.COLOR_CARD,
-                         fg=config.COLOR_FG, font=config.FONT_MED,
-                         anchor="w").pack(anchor="w")
-                tk.Label(info_f, text=s["mac"], bg=config.COLOR_CARD,
-                         fg=config.COLOR_MUTED, font=config.FONT_SMALL,
-                         anchor="w").pack(anchor="w")
-
-                assigned = s["device_name"] or "non assigne"
-                tk.Label(row, text=assigned, bg=config.COLOR_CARD,
-                         fg=config.COLOR_SUCCESS if s["device_id"] else config.COLOR_WARNING,
-                         font=config.FONT_SMALL, width=12, anchor="w",
-                         ).pack(side="left", padx=4)
-
+                # Boutons packes EN PREMIER (a droite) : avec pack, les widgets
+                # packes en dernier sont rognes si la place manque — un long
+                # nom de capteur ne doit jamais faire disparaitre 'Assigner'.
                 def pick(sensor=s, devs=devices):
                     _pick_device(top, sensor, devs, render)
+
+                tk.Button(row, text="Assigner", font=config.FONT_SMALL,
+                          bg=config.COLOR_PRIMARY, fg="white", bd=0,
+                          padx=8, pady=4,
+                          command=pick).pack(side="right", padx=6, pady=6)
 
                 if is_wifi:
                     def remove(sensor=s):
@@ -249,15 +234,25 @@ class SettingsScreen(tk.Frame):
                             database.delete_sensor(sensor["id"])
                             render()
 
-                    tk.Button(row, text="🗑", font=config.FONT_SMALL,
+                    tk.Button(row, text="Suppr", font=config.FONT_SMALL,
                               bg=config.COLOR_DANGER, fg="white", bd=0,
-                              width=3, command=remove
-                              ).pack(side="right", padx=(0, 6), pady=6)
+                              padx=6, pady=4, command=remove
+                              ).pack(side="right", padx=(0, 2), pady=6)
 
-                tk.Button(row, text="Assigner", font=config.FONT_SMALL,
-                          bg=config.COLOR_PRIMARY, fg="white", bd=0,
-                          padx=8, pady=4,
-                          command=pick).pack(side="right", padx=6, pady=6)
+                assigned = s["device_name"] or "non assigne"
+                tk.Label(row, text=assigned, bg=config.COLOR_CARD,
+                         fg=config.COLOR_SUCCESS if s["device_id"] else config.COLOR_WARNING,
+                         font=config.FONT_SMALL, width=11, anchor="w",
+                         ).pack(side="right", padx=4)
+
+                info_f = tk.Frame(row, bg=config.COLOR_CARD)
+                info_f.pack(side="left", fill="x", expand=True, padx=8, pady=6)
+                tk.Label(info_f, text=f"{icon} {s['label'][:16]}", bg=config.COLOR_CARD,
+                         fg=config.COLOR_FG, font=config.FONT_MED,
+                         anchor="w").pack(anchor="w")
+                tk.Label(info_f, text=s["mac"], bg=config.COLOR_CARD,
+                         fg=config.COLOR_MUTED, font=config.FONT_SMALL,
+                         anchor="w").pack(anchor="w")
 
         render()
 

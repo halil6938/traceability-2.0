@@ -1,7 +1,35 @@
 """Widgets et helpers UI communs, optimises pour ecran tactile 800x480 paysage."""
 import tkinter as tk
-from tkinter import messagebox
 from . import config
+
+
+def open_modal(parent, w, h, color=None):
+    """Cree un popup modal overrideredirect de facon fiable sur le Pi (X11) :
+    fenetre positionnee et rendue affichable AVANT grab_set (sinon 'grab
+    failed: window not viewable'). Fermer avec close_modal()."""
+    top = tk.Toplevel(parent)
+    top.configure(bg=config.COLOR_BG)
+    top.overrideredirect(True)
+    style_popup(top, color)
+    x = (config.SCREEN_W - w) // 2
+    y = (config.SCREEN_H - h) // 2
+    top.geometry(f"{w}x{h}+{x}+{y}")
+    top.transient(parent)
+    top.update_idletasks()
+    try:
+        top.grab_set()
+    except Exception:
+        pass
+    return top
+
+
+def close_modal(top):
+    """Libere le grab AVANT destroy (sinon l'ecran reste fige sur le Pi)."""
+    try:
+        top.grab_release()
+    except Exception:
+        pass
+    top.destroy()
 
 
 def make_button(master, text, command, bg=None, fg="white", font=None, **kw):
@@ -29,17 +57,7 @@ def style_popup(top, color=None):
 
 def numpad_popup(parent, title="Saisie", initial="", allow_negative=True, allow_decimal=True):
     """Clavier numerique tactile modal. Retourne la chaine saisie ou None."""
-    top = tk.Toplevel(parent)
-    top.title(title)
-    top.configure(bg=config.COLOR_BG)
-    top.transient(parent)
-    top.grab_set()
-    w, h = 340, 360
-    x = (config.SCREEN_W - w) // 2
-    y = (config.SCREEN_H - h) // 2
-    top.geometry(f"{w}x{h}+{x}+{y}")
-    top.overrideredirect(True)
-    style_popup(top)
+    top = open_modal(parent, 340, 360)
 
     tk.Label(top, text=title, bg=config.COLOR_BG, fg=config.COLOR_FG,
              font=config.FONT_MED).pack(pady=(10, 4))
@@ -89,10 +107,10 @@ def numpad_popup(parent, title="Saisie", initial="", allow_negative=True, allow_
 
     def ok():
         result["v"] = value.get()
-        top.destroy()
+        close_modal(top)
 
     def cancel():
-        top.destroy()
+        close_modal(top)
 
     btns = tk.Frame(top, bg=config.COLOR_BG)
     btns.pack(pady=8, fill="x", padx=12)
@@ -107,19 +125,9 @@ def numpad_popup(parent, title="Saisie", initial="", allow_negative=True, allow_
 
 def text_popup(parent, title="Saisie", initial=""):
     """Clavier texte simplifie (azerty). Retourne la chaine ou None."""
-    top = tk.Toplevel(parent)
-    top.title(title)
-    top.configure(bg=config.COLOR_BG)
-    top.transient(parent)
-    top.grab_set()
-    top.resizable(False, False)
     w = min(620, config.SCREEN_W - 4)
     h = min(440, config.SCREEN_H - 10)
-    x = (config.SCREEN_W - w) // 2
-    y = (config.SCREEN_H - h) // 2
-    top.geometry(f"{w}x{h}+{x}+{y}")
-    top.overrideredirect(True)
-    style_popup(top)
+    top = open_modal(parent, w, h)
 
     tk.Label(top, text=title, bg=config.COLOR_BG, fg=config.COLOR_FG,
              font=config.FONT_MED).pack(pady=(6, 2))
@@ -183,12 +191,12 @@ def text_popup(parent, title="Saisie", initial=""):
 
     def ok():
         result["v"] = value.get().strip()
-        top.destroy()
+        close_modal(top)
 
     btns = tk.Frame(top, bg=config.COLOR_BG)
     btns.pack(pady=6, fill="x", padx=8)
     tk.Button(btns, text="Annuler", font=config.FONT_MED, bg=config.COLOR_CARD,
-              fg=config.COLOR_FG, bd=0, command=top.destroy
+              fg=config.COLOR_FG, bd=0, command=lambda: close_modal(top)
               ).pack(side="left", expand=True, fill="x", padx=4, ipady=8)
     tk.Button(btns, text="OK", font=config.FONT_MED, bg=config.COLOR_SUCCESS,
               fg="white", bd=0, command=ok
@@ -198,13 +206,49 @@ def text_popup(parent, title="Saisie", initial=""):
     return result["v"]
 
 
+def _dialog(parent, title, msg, color, buttons):
+    """Popup de dialogue tactile maison. Les messagebox natives de Tk sont
+    proscrites : elles s'ouvrent DERRIERE la fenetre plein ecran -topmost du
+    Pi (invisibles mais modales -> appli qui semble gelee).
+    buttons : liste de (texte, valeur, couleur). Retourne la valeur choisie."""
+    top = open_modal(parent, 420, 230, color)
+
+    tk.Label(top, text=title, bg=config.COLOR_BG, fg=config.COLOR_FG,
+             font=config.FONT_BIG).pack(pady=(18, 6))
+    tk.Label(top, text=msg, bg=config.COLOR_BG, fg=config.COLOR_MUTED,
+             font=config.FONT_MED, wraplength=380, justify="center"
+             ).pack(pady=4, expand=True)
+
+    result = {"v": buttons[0][1]}  # valeur du 1er bouton si fermeture forcee
+
+    btns = tk.Frame(top, bg=config.COLOR_BG)
+    btns.pack(side="bottom", fill="x", padx=12, pady=12)
+
+    def choose(v):
+        result["v"] = v
+        close_modal(top)
+
+    for text, val, bg in buttons:
+        tk.Button(btns, text=text, font=config.FONT_MED, bg=bg, fg="white",
+                  bd=0, command=lambda v=val: choose(v)
+                  ).pack(side="left", expand=True, fill="x", padx=4, ipady=10)
+
+    parent.wait_window(top)
+    return result["v"]
+
+
 def confirm(parent, title, msg) -> bool:
-    return messagebox.askyesno(title, msg, parent=parent)
+    return _dialog(parent, title, msg, config.COLOR_WARNING, [
+        ("Annuler", False, config.COLOR_CARD),
+        ("Confirmer", True, config.COLOR_DANGER),
+    ])
 
 
 def info(parent, title, msg):
-    messagebox.showinfo(title, msg, parent=parent)
+    _dialog(parent, title, msg, config.COLOR_SUCCESS,
+            [("OK", None, config.COLOR_PRIMARY)])
 
 
 def error(parent, title, msg):
-    messagebox.showerror(title, msg, parent=parent)
+    _dialog(parent, title, msg, config.COLOR_DANGER,
+            [("OK", None, config.COLOR_CARD)])
