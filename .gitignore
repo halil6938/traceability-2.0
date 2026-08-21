@@ -29,3 +29,7 @@ Thumbs.db
 
 # Config locale de l'agent Claude
 .claude/
+
+# Log de test cree a la racine
+remote.log
+tuya.log
