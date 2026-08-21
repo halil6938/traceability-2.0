@@ -49,6 +49,7 @@ class CameraScanScreen(tk.Frame):
         self._last_capture = 0
         self._capturing = False
         self._sharp_max = 0.0  # meilleur score de nettete vu (mode test)
+        self._last_activity = time.time()  # derniere detection d'etiquette
 
         self._init_camera()
         self.after(10, self._loop)
@@ -297,6 +298,7 @@ class CameraScanScreen(tk.Frame):
             else:
                 rect = self._detect_rectangle(frame)
                 if rect is not None:
+                    self._last_activity = time.time()
                     cv2.drawContours(frame, [rect], -1, (0, 255, 0), 4)
                     self._stable_count += 1
                     self.status.config(
@@ -311,6 +313,10 @@ class CameraScanScreen(tk.Frame):
                 else:
                     self._stable_count = max(0, self._stable_count - 1)
                     self.status.config(text="Recherche d'une etiquette...", fg="white")
+                    # Retour auto au menu apres un long moment sans etiquette
+                    if time.time() - self._last_activity > config.SCAN_INACTIVITY_S:
+                        self._back()
+                        return
 
             self._show_frame(frame)
 
