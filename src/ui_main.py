@@ -2,7 +2,7 @@
 import tkinter as tk
 import threading
 from datetime import date, datetime, timedelta
-from . import config, database, usb_manager
+from . import config, database, usb_manager, remote_lock
 from .camera_scan import CameraScanScreen
 from .ui_temperature import TemperatureScreen
 from .ui_history import HistoryScreen
@@ -29,11 +29,24 @@ class App(tk.Tk):
         self.focus_force()
 
         self.current = None
+        self._lock_overlay = None
+
+        # Reglages a distance memorises (couleurs...) : appliques AVANT de
+        # construire les ecrans pour qu'ils prennent effet des le demarrage.
+        _locked_cache, _msg_cache, _cfg_cache = remote_lock.cached_state()
+        remote_lock.apply_config(_cfg_cache)
 
         if not database.get_meta("setup_done"):
             SetupWizard(self, self.show_menu)
         else:
             self.show_menu()
+
+        # Verrou a distance : si le dernier etat connu etait « bloque », on
+        # affiche le blocage immediatement (avant meme le reseau) -> survit
+        # au redemarrage et hors ligne.
+        if _locked_cache:
+            self._show_lock_overlay(_msg_cache)
+        self.after(2000, self._lock_tick)
 
         # Sync USB periodique
         self.after(1500, self._periodic_sync)
@@ -168,6 +181,61 @@ class App(tk.Tk):
             purge.purge_old_photos()
         except Exception:
             pass
+
+    # --- Verrou a distance ---
+
+    def _lock_tick(self):
+        """Verifie l'etat distant en tache de fond (n'gele jamais l'UI) et
+        applique le resultat (affiche/retire le blocage)."""
+        box = {}
+
+        def do():
+            try:
+                box["res"] = remote_lock.refresh()
+            except Exception:
+                box["res"] = None
+
+        def poll():
+            if not self.winfo_exists():
+                return
+            if "res" not in box:
+                self.after(200, poll)
+                return
+            if box["res"] is not None:
+                locked, message = box["res"]
+                if locked:
+                    self._show_lock_overlay(message)
+                else:
+                    self._hide_lock_overlay()
+            self.after(config.REMOTE_POLL_S * 1000, self._lock_tick)
+
+        threading.Thread(target=do, daemon=True).start()
+        self.after(200, poll)
+
+    def _show_lock_overlay(self, message):
+        """Overlay plein ecran non fermable : bloque toute l'appli."""
+        if self._lock_overlay is not None and self._lock_overlay.winfo_exists():
+            # deja affiche : on met juste le message a jour
+            self._lock_msg.config(text=message or "Application suspendue.")
+            self._lock_overlay.lift()
+            return
+        ov = tk.Frame(self, bg=config.COLOR_BG)
+        ov.place(relx=0, rely=0, relwidth=1, relheight=1)
+        ov.lift()
+        tk.Label(ov, text="🔒", bg=config.COLOR_BG, fg=config.COLOR_DANGER,
+                 font=("DejaVu Sans", 64)).pack(pady=(70, 10))
+        self._lock_msg = tk.Label(
+            ov, text=message or "Application suspendue.",
+            bg=config.COLOR_BG, fg=config.COLOR_FG, font=config.FONT_TITLE,
+            wraplength=config.SCREEN_W - 80, justify="center")
+        self._lock_msg.pack(pady=10, padx=40)
+        self._lock_overlay = ov
+
+    def _hide_lock_overlay(self):
+        if self._lock_overlay is not None:
+            if self._lock_overlay.winfo_exists():
+                self._lock_overlay.destroy()
+            self._lock_overlay = None
 
 
 class MainMenu(tk.Frame):

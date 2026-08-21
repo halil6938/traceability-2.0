@@ -41,6 +41,13 @@ SCAN_INACTIVITY_S = 180           # retour auto au menu si aucune etiquette
 # Retention photos (6 mois)
 PHOTO_RETENTION_DAYS = 180
 
+# --- Controle a distance (verrou + reglages) ---
+# Fichier JSON edite sur GitHub, lu periodiquement par chaque Pi.
+REMOTE_CONTROL_URL = ("https://raw.githubusercontent.com/"
+                      "halil6938/traceability-2.0/master/remote_control.json")
+REMOTE_POLL_S = 60      # frequence de verification (secondes)
+DEVICE_ID = ""          # identifiant de CE Pi dans le fichier ; vide = nom d'hote
+
 # Couleurs UI
 COLOR_BG = "#1e293b"
 COLOR_FG = "#f1f5f9"

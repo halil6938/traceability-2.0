@@ -8,6 +8,33 @@ Application de traçabilité pour Raspberry Pi 3 (écran tactile 5" 800×480, **
 - 📊 **Historique** mensuel consultable et modifiable (tickets, températures, réceptions).
 - 📄 **Export PDF** par mois sur clé USB (températures + réceptions).
 - 🗑 **Purge auto** des photos > 6 mois.
+- 🔒 **Contrôle à distance** : verrou + réglages via `remote_control.json` (voir plus bas).
+
+## Contrôle à distance (verrou + réglages)
+
+Chaque Pi lit périodiquement (≈1 min) le fichier [`remote_control.json`](remote_control.json)
+de ce dépôt, à la ligne correspondant à **son nom d'hôte**. On l'édite directement
+sur GitHub (téléphone ou PC).
+
+```json
+"raspstpriest": {
+  "locked": true,
+  "message": "Application suspendue.\nContactez votre fournisseur.",
+  "config": { "COLOR_PRIMARY": "#e11d48", "SCAN_INACTIVITY_S": 120 }
+}
+```
+
+- **Bloquer** : `locked: true` + un `message`. Un overlay plein écran non fermable
+  s'affiche. Le blocage est mémorisé localement → il **survit au redémarrage** de
+  l'appli et du Pi, et à une coupure internet. Débloquer : remettre `locked: false`.
+- **Régler à distance** (`config`) : liste blanche = `COLOR_*` (format `#rrggbb`),
+  `SCAN_INACTIVITY_S`, `RECT_STABLE_FRAMES`, `PHOTO_RETENTION_DAYS`,
+  `FOCUS_DISTANCE_CM`, `CAMERA_ROTATION`. Une valeur inconnue/invalide est ignorée.
+  Les changements de couleur s'appliquent au retour au menu (ou au redémarrage).
+- Une coupure réseau **conserve le dernier état connu** (jamais de blocage accidentel).
+  Un Pi non listé est considéré comme autorisé.
+- ⚠ Blocage **dissuasif** (soft) : un accès physique + technique peut le contourner.
+  Activer la **2FA** sur le compte GitHub (le Pi exécute ce que dit le dépôt).
 
 ## Architecture
 
