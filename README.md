@@ -12,17 +12,21 @@ Application de traçabilité pour Raspberry Pi 3 (écran tactile 5" 800×480, **
 
 ## Contrôle à distance (verrou + réglages)
 
-Chaque Pi lit périodiquement (≈20 s) le fichier [`remote_control.json`](remote_control.json)
-de ce dépôt, à la ligne correspondant à **son nom d'hôte**. On l'édite directement
-sur GitHub (téléphone ou PC).
+Chaque Pi lit périodiquement (≈20 s) **son propre fichier** `devices/<nom-du-pi>.json`
+(le nom d'hôte du Pi), qu'on édite directement sur GitHub (téléphone ou PC). Un fichier
+par client → pour en bloquer un, on ouvre juste son fichier. Gabarit :
+[`devices/_modele.json`](devices/_modele.json).
 
+`devices/raspstpriest.json` :
 ```json
-"raspstpriest": {
+{
   "locked": true,
   "message": "Application suspendue.\nContactez votre fournisseur.",
   "config": { "COLOR_PRIMARY": "#e11d48", "SCAN_INACTIVITY_S": 120 }
 }
 ```
+
+Nouveau client : copier `_modele.json` en `<hostname>.json` (voir `hostname` sur le Pi).
 
 - **Bloquer** : `locked: true` + un `message`. Un overlay plein écran non fermable
   s'affiche. Le blocage est mémorisé localement → il **survit au redémarrage** de

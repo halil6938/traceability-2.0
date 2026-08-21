@@ -13,6 +13,7 @@ import json
 import logging
 import socket
 import time
+import urllib.error
 import urllib.request
 
 from . import config, database
@@ -84,24 +85,33 @@ def cached_state():
     return locked, message, cfg
 
 
+_AUTHORIZED = {"locked": False, "message": "", "config": {}}
+
+
 def _fetch():
-    """Telecharge le fichier de controle et retourne l'entree de ce Pi, ou
-    None en cas d'echec (reseau, JSON invalide)."""
-    url = config.REMOTE_CONTROL_URL
-    if not url:
+    """Telecharge le fichier de CE Pi (<base>/<device_id>.json) et retourne
+    son contenu normalise. Fichier absent (404) = appareil autorise. None en
+    cas d'echec reseau ou JSON invalide (l'appelant garde le dernier etat)."""
+    base = config.REMOTE_CONTROL_BASE
+    if not base:
         return None
+    url = f"{base.rstrip('/')}/{device_id()}.json"
     sep = "&" if "?" in url else "?"          # anti-cache CDN GitHub
     full = f"{url}{sep}t={int(time.time())}"
     try:
         req = urllib.request.Request(full, headers={"User-Agent": "traceability"})
         with urllib.request.urlopen(req, timeout=10) as r:
-            data = json.loads(r.read().decode("utf-8"))
+            entry = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return dict(_AUTHORIZED)  # pas de fichier pour ce Pi = autorise
+        logger.info("verification a distance (HTTP %s)", e.code)
+        return None
     except Exception as e:
         logger.info("verification a distance impossible : %s", e)
         return None
-    entry = data.get(device_id())
     if not isinstance(entry, dict):
-        return {"locked": False, "message": "", "config": {}}  # non liste = autorise
+        return dict(_AUTHORIZED)
     return {
         "locked": bool(entry.get("locked", False)),
         "message": str(entry.get("message", "")),

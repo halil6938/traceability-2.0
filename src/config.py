@@ -42,12 +42,12 @@ SCAN_INACTIVITY_S = 180           # retour auto au menu si aucune etiquette
 PHOTO_RETENTION_DAYS = 180
 
 # --- Controle a distance (verrou + reglages) ---
-# Fichier JSON edite sur GitHub, lu periodiquement par chaque Pi.
-REMOTE_CONTROL_URL = ("https://raw.githubusercontent.com/"
-                      "halil6938/traceability-2.0/master/remote_control.json")
+# Chaque Pi lit SON fichier : <REMOTE_CONTROL_BASE>/<device_id>.json sur GitHub.
+REMOTE_CONTROL_BASE = ("https://raw.githubusercontent.com/"
+                       "halil6938/traceability-2.0/master/devices")
 REMOTE_POLL_S = 20      # frequence de verification (secondes) : compromis
                         # entre reactivite du verrou et trafic reseau
-DEVICE_ID = ""          # identifiant de CE Pi dans le fichier ; vide = nom d'hote
+DEVICE_ID = ""          # identifiant de CE Pi (= nom du fichier) ; vide = nom d'hote
 
 # Couleurs UI
 COLOR_BG = "#1e293b"

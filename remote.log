@@ -1,0 +1,3 @@
+2026-08-21 22:28:25,495 WARNING reglage COLOR_BG invalide (pasunecouleur) : couleur invalide : pasunecouleur
+2026-08-21 22:28:25,496 WARNING reglage non autorise ignore : MOT_DE_PASSE
+2026-08-21 22:29:02,648 INFO etat distant : locked=False config={}
