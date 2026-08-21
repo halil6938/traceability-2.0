@@ -12,7 +12,7 @@ Application de traçabilité pour Raspberry Pi 3 (écran tactile 5" 800×480, **
 
 ## Contrôle à distance (verrou + réglages)
 
-Chaque Pi lit périodiquement (≈1 min) le fichier [`remote_control.json`](remote_control.json)
+Chaque Pi lit périodiquement (≈20 s) le fichier [`remote_control.json`](remote_control.json)
 de ce dépôt, à la ligne correspondant à **son nom d'hôte**. On l'édite directement
 sur GitHub (téléphone ou PC).
 

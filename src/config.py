@@ -45,7 +45,8 @@ PHOTO_RETENTION_DAYS = 180
 # Fichier JSON edite sur GitHub, lu periodiquement par chaque Pi.
 REMOTE_CONTROL_URL = ("https://raw.githubusercontent.com/"
                       "halil6938/traceability-2.0/master/remote_control.json")
-REMOTE_POLL_S = 60      # frequence de verification (secondes)
+REMOTE_POLL_S = 20      # frequence de verification (secondes) : compromis
+                        # entre reactivite du verrou et trafic reseau
 DEVICE_ID = ""          # identifiant de CE Pi dans le fichier ; vide = nom d'hote
 
 # Couleurs UI
