@@ -16,6 +16,7 @@ from . import config, database, usb_manager
 CAL_COARSE_STEPS = 16   # positions balayees en passe large
 CAL_FINE_STEPS = 9      # positions en passe fine autour du meilleur
 CAL_SETTLE_MS = 350     # stabilisation de la lentille avant mesure
+FOCUS_STEP = 0.25       # pas du reglage manuel de mise au point
 
 try:
     from picamera2 import Picamera2
@@ -124,6 +125,14 @@ class CameraScanScreen(tk.Frame):
                       command=self._start_calibration, bg=config.COLOR_PRIMARY,
                       fg="white", bd=0, padx=12, pady=4
                       ).pack(side="right", padx=4, pady=4)
+            tk.Button(bar, text="▶", font=config.FONT_MED,
+                      command=lambda: self._nudge_focus(FOCUS_STEP),
+                      bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4
+                      ).pack(side="right", padx=2, pady=4)
+            tk.Button(bar, text="◀", font=config.FONT_MED,
+                      command=lambda: self._nudge_focus(-FOCUS_STEP),
+                      bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4
+                      ).pack(side="right", padx=2, pady=4)
         self.status.pack(side="left", padx=12)
 
         self.flash = tk.Frame(self, bg="white")  # overlay flash au moment de la capture
@@ -136,6 +145,7 @@ class CameraScanScreen(tk.Frame):
         self._last_activity = time.time()  # derniere detection d'etiquette
         self._cal = None          # calibration en cours (etat du balayage)
         self._cal_done_at = 0.0   # pour garder le message de fin affiche
+        self._manual_lens = None  # position courante en reglage manuel
 
         self._init_camera()
         self.after(10, self._loop)
@@ -431,8 +441,12 @@ class CameraScanScreen(tk.Frame):
         ratio = score / self._sharp_max if self._sharp_max > 0 else 0.0
         color = (config.COLOR_SUCCESS if ratio > 0.8 else
                  config.COLOR_WARNING if ratio > 0.5 else config.COLOR_DANGER)
+        pos = self._manual_lens
+        if pos is None:
+            pos = self._calibrated_lens()
+        focus = f"Focus {pos:.2f} — " if pos is not None else ""
         self.status.config(
-            text=f"Image brute — Netteté : {score:.0f} (meilleur : {self._sharp_max:.0f})",
+            text=f"{focus}Netteté : {score:.0f} (max : {self._sharp_max:.0f})",
             fg=color)
 
     def _show_frame(self, rgb_array):
@@ -443,6 +457,30 @@ class CameraScanScreen(tk.Frame):
                           max(1, int(img.height * scale))), Image.BILINEAR)
         self._tkimg = ImageTk.PhotoImage(img)
         self.preview_label.config(image=self._tkimg)
+
+    def _nudge_focus(self, delta):
+        """Deplace la lentille pas a pas (reglage manuel) et memorise la
+        position : elle est reappliquee a chaque demarrage, comme une
+        calibration."""
+        if self._cal is not None:
+            return
+        rng = self._lens_range()
+        if rng is None:
+            self.status.config(text="Pas de moteur de mise au point",
+                               fg=config.COLOR_DANGER)
+            self._cal_done_at = time.time()
+            return
+        lo, hi = rng
+        cur = self._manual_lens
+        if cur is None:
+            cur = self._calibrated_lens()
+        if cur is None:
+            cur = (lo + hi) / 2
+        cur = max(lo, min(hi, cur + delta))
+        self._manual_lens = cur
+        self._set_lens(cur)
+        database.set_meta("camera_lens_position", f"{cur:.3f}")
+        self._sharp_max = 0.0  # l'echelle de nettete repart proprement
 
     # --- calibration de la mise au point ---
 
@@ -527,6 +565,7 @@ class CameraScanScreen(tk.Frame):
                 fg=config.COLOR_DANGER)
             return
         database.set_meta("camera_lens_position", f"{best:.3f}")
+        self._manual_lens = best
         self._set_lens(best)
         self._sharp_max = 0.0  # repartir sur une echelle de nettete propre
         self.status.config(
@@ -539,6 +578,7 @@ class CameraScanScreen(tk.Frame):
         if self._cal is not None:
             return
         database.set_meta("camera_lens_position", "")
+        self._manual_lens = None
         self._sharp_max = 0.0
         self._cal_done_at = time.time()
         try:
