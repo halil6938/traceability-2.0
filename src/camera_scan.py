@@ -102,14 +102,13 @@ class CameraScanScreen(tk.Frame):
         if rng is None:
             return False
         lo, hi = rng
-        ctrls = {"LensPosition": max(lo, min(hi, float(pos)))}
-        try:
-            from libcamera import controls
-            ctrls["AfMode"] = controls.AfModeEnum.Manual
+        try:  # AF manuel d'abord, dans son propre try : un refus ici ne doit
+            from libcamera import controls  # pas empecher d'ecrire la position
+            self.picam.set_controls({"AfMode": controls.AfModeEnum.Manual})
         except Exception:
             pass
         try:
-            self.picam.set_controls(ctrls)
+            self.picam.set_controls({"LensPosition": max(lo, min(hi, float(pos)))})
             return True
         except Exception:
             return False
@@ -371,6 +370,7 @@ class CameraScanScreen(tk.Frame):
         self._cal = {
             "positions": [lo + i * step for i in range(CAL_COARSE_STEPS)],
             "i": 0, "best": None, "best_score": -1.0, "phase": "1/2",
+            "scores": [],
         }
         self._cal_next()
 
@@ -395,6 +395,7 @@ class CameraScanScreen(tk.Frame):
             self.after(80, self._cal_measure)
             return
         score = self._sharpness(frame)
+        cal["scores"].append(score)
         if score > cal["best_score"]:
             cal["best_score"] = score
             cal["best"] = cal["positions"][cal["i"]]
@@ -416,11 +417,21 @@ class CameraScanScreen(tk.Frame):
 
     def _finish_calibration(self):
         best, score = self._cal["best"], self._cal["best_score"]
+        scores = self._cal["scores"]
         self._cal = None
         self._cal_done_at = time.time()
         if best is None:
-            self.status.config(text="Calibration echouee — reessayez",
+            self.status.config(text="Calibration échouée — réessayez",
                                fg=config.COLOR_DANGER)
+            return
+        # Garde-fou : nettete quasi constante = lentille immobile (moteur non
+        # pilote) ou cible sans contraste. On n'enregistre rien.
+        lo_s = min(scores) if scores else 0.0
+        if lo_s > 0 and score / lo_s < 1.15:
+            self.status.config(
+                text="⚠ La netteté n'a pas varié : moteur non piloté, ou cible "
+                     "sans contraste — rien n'a été enregistré",
+                fg=config.COLOR_DANGER)
             return
         database.set_meta("camera_lens_position", f"{best:.3f}")
         self._set_lens(best)
