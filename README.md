@@ -63,7 +63,8 @@ traceability/
 │   ├── ui_reception.py       # réception fournisseurs + lecture pistolet
 │   ├── ui_history.py         # tableau mensuel + export
 │   └── ui_settings.py        # gestion appareils
-├── tools/                    # outils de diagnostic BLE (ble_e2e.py, ...)
+├── tools/                    # diagnostic (ble_e2e.py, focus_probe.py)
+│                             # + déploiement (prepare_master.sh, set_client.sh)
 ├── requirements.txt
 ├── install.sh
 └── traceability.service
@@ -74,6 +75,43 @@ traceability/
 1. Copier le dossier `traceability/` sur le Pi (clé USB, SCP, git clone...).
 2. `cd traceability && bash install.sh`
 3. Redémarrer : l'appli se lance automatiquement.
+
+## Déployer sur plusieurs Pi (clonage de carte SD)
+
+Le clonage emporte tous les réglages système déjà faits sur le Pi maître
+(rotation de l'écran, `dtoverlay=ov5647,vcm`, Bluetooth, démarrage auto) —
+c'est ce qui rend la méthode rapide. Matériel identique requis.
+
+**1. Préparer l'image modèle** (sur le Pi maître, une seule fois) :
+
+```bash
+bash tools/prepare_master.sh        # --garder-wifi pour conserver le WiFi
+sudo poweroff                       # ÉTEINDRE, surtout ne pas redémarrer
+```
+
+Efface les données du client (relevés, appareils, fournisseurs, capteurs,
+calibration caméra), les identifiants uniques (clés SSH, machine-id) et les
+WiFi mémorisés. **Conserve les clés cloud Tuya** (compte développeur commun).
+
+**2. Copier la carte SD** dans une image, sur le PC (Raspberry Pi Imager →
+« Lire », ou Win32DiskImager → *Read*).
+
+**3. Flasher chaque nouveau Pi** avec cette image via Raspberry Pi Imager, en
+renseignant dans les **réglages avancés** (roue crantée) :
+- un **nom d'hôte unique** = le nom du client (`boucherie-durand`) — c'est
+  l'identifiant du [contrôle à distance](#contrôle-à-distance-verrou--réglages) ;
+- le **WiFi du magasin**.
+
+Si le nom n'a pas été défini au flashage : `bash tools/set_client.sh boucherie-durand`.
+
+**4. Sur place**, au premier démarrage :
+1. Assistant : créer les appareils (frigos/congélateurs) avec leurs seuils.
+2. **Réception → ⚙ Fournisseurs** : fournisseurs + MAC du pistolet BLE.
+3. **Paramètres → 📡 Capteurs temp.** : associer les capteurs BLE / WiFi.
+4. **Paramètres → 📷 Test caméra → 🎯 Calibrer** (propre à chaque montage).
+5. Sur GitHub, créer `devices/<nom-du-client>.json` (copie de `_modele.json`)
+   pour pouvoir verrouiller ce Pi à distance. Sans fichier, il fonctionne
+   normalement.
 
 ## Stockage
 
