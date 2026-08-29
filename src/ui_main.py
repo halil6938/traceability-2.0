@@ -2,7 +2,9 @@
 import tkinter as tk
 import threading
 from datetime import date, datetime, timedelta
-from . import config, database, usb_manager, remote_lock
+import os
+
+from . import config, database, usb_manager, remote_lock, updater
 from .camera_scan import CameraScanScreen
 from .ui_temperature import TemperatureScreen
 from .ui_history import HistoryScreen
@@ -47,6 +49,9 @@ class App(tk.Tk):
         if _locked_cache:
             self._show_lock_overlay(_msg_cache)
         self.after(2000, self._lock_tick)
+
+        # Mise a jour automatique du code depuis GitHub
+        self.after(60_000, self._update_tick)
 
         # Sync USB periodique
         self.after(1500, self._periodic_sync)
@@ -181,6 +186,96 @@ class App(tk.Tk):
             purge.purge_old_photos()
         except Exception:
             pass
+
+    # --- Mise a jour automatique ---
+
+    def _update_ready(self):
+        """Conditions pour appliquer une mise a jour maintenant : appli au
+        repos (menu principal) et, en mode « auto », heures creuses — sauf si
+        la mise a jour attend depuis trop longtemps (Pi eteint la nuit)."""
+        if not isinstance(self.current, MainMenu):
+            return False            # ne jamais interrompre un scan ou une mesure
+        mode = updater.mode()
+        if mode == "off":
+            return False
+        if mode == "now":
+            return True
+        start, end = config.UPDATE_QUIET_HOURS
+        if start <= datetime.now().hour < end:
+            return True
+        since = database.get_meta("update_pending_since", "")
+        if since:
+            try:
+                waited = datetime.now() - datetime.fromisoformat(since)
+                return waited.total_seconds() > config.UPDATE_MAX_PENDING_H * 3600
+            except ValueError:
+                return False
+        return False
+
+    def _update_tick(self):
+        """Verifie la disponibilite d'une mise a jour, en tache de fond."""
+        box = {}
+
+        def do():
+            try:
+                box["target"] = updater.check_available()
+            except Exception:
+                box["target"] = None
+            box["done"] = True
+
+        def poll():
+            if not self.winfo_exists():
+                return
+            if not box.get("done"):
+                self.after(500, poll)
+                return
+            target = box.get("target")
+            if target:
+                # memoriser depuis quand elle attend (pour les Pi eteints la nuit)
+                if not database.get_meta("update_pending_since", ""):
+                    database.set_meta("update_pending_since",
+                                      datetime.now().isoformat())
+                if self._update_ready():
+                    self._apply_update(target)
+                    return
+            else:
+                database.set_meta("update_pending_since", "")
+            self.after(config.UPDATE_CHECK_S * 1000, self._update_tick)
+
+        threading.Thread(target=do, daemon=True).start()
+        self.after(500, poll)
+
+    def _apply_update(self, target):
+        """Applique la mise a jour puis redemarre l'appli (systemd relance)."""
+        overlay = tk.Frame(self, bg=config.COLOR_BG)
+        overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+        overlay.lift()
+        tk.Label(overlay, text="Mise à jour en cours…", bg=config.COLOR_BG,
+                 fg=config.COLOR_FG, font=config.FONT_TITLE).pack(pady=(150, 12))
+        tk.Label(overlay, text="L'application va redémarrer automatiquement.",
+                 bg=config.COLOR_BG, fg=config.COLOR_MUTED,
+                 font=config.FONT_MED).pack()
+        box = {}
+
+        def do():
+            try:
+                box["ok"] = updater.perform_update(target)
+            except Exception:
+                box["ok"] = False
+            box["done"] = True
+
+        def poll():
+            if not box.get("done"):
+                self.after(500, poll)
+                return
+            if box.get("ok"):
+                database.set_meta("update_pending_since", "")
+                os._exit(updater.RESTART_EXIT_CODE)  # systemd relance le service
+            overlay.destroy()  # echec : on reste sur l'ancienne version
+            self.after(config.UPDATE_CHECK_S * 1000, self._update_tick)
+
+        threading.Thread(target=do, daemon=True).start()
+        self.after(500, poll)
 
     # --- Verrou a distance ---
 

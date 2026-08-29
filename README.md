@@ -76,6 +76,36 @@ traceability/
 2. `cd traceability && bash install.sh`
 3. Redémarrer : l'appli se lance automatiquement.
 
+## Mise à jour automatique du code
+
+Chaque Pi compare toutes les 15 min le code déployé à la branche `master` du
+dépôt. Si elle a avancé, il récupère la nouvelle version, **vérifie qu'elle
+démarre**, puis redémarre l'application. Il suffit donc de pousser sur GitHub
+pour mettre à jour tout le parc.
+
+Garde-fous — une mauvaise version ne doit pas paralyser les magasins :
+
+- mise à jour **uniquement quand l'appli est au repos** (menu principal), jamais
+  pendant un scan ou une mesure ;
+- en mode `auto`, **seulement entre 2 h et 5 h** — sauf si la mise à jour attend
+  depuis plus de 24 h (Pi éteint la nuit) ;
+- le nouveau code est **chargé en test avant d'être adopté** ; s'il ne démarre
+  pas, **retour automatique à la version précédente** (journalisé dans
+  `~/traceability/logs/update.log`) ;
+- pilotage par appareil dans `devices/<hostname>.json` :
+
+```json
+{ "update": "auto" }
+```
+`auto` (défaut) · `now` (dès que possible, pour un correctif urgent) ·
+`off` (fige la version de ce client).
+
+La version déployée et le nom du Pi sont affichés en bas de l'écran
+**Paramètres** (utile pour le support à distance).
+
+⚠ Le Pi exécute le code du dépôt : garder la **2FA** active sur le compte
+GitHub, et tester avant de pousser.
+
 ## Déployer sur plusieurs Pi (clonage de carte SD)
 
 Le clonage emporte tous les réglages système déjà faits sur le Pi maître

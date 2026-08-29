@@ -49,6 +49,15 @@ REMOTE_POLL_S = 20      # frequence de verification (secondes) : compromis
                         # entre reactivite du verrou et trafic reseau
 DEVICE_ID = ""          # identifiant de CE Pi (= nom du fichier) ; vide = nom d'hote
 
+# --- Mise a jour automatique du code (voir src/updater.py) ---
+REPO_URL = "https://github.com/halil6938/traceability-2.0.git"
+REPO_DIR = Path.home() / "traceability-2.0"  # depot local (clone au besoin)
+REPO_BRANCH = "master"
+UPDATE_CHECK_S = 900         # verification toutes les 15 min
+UPDATE_QUIET_HOURS = (2, 5)  # heures creuses des mises a jour « auto »
+UPDATE_MAX_PENDING_H = 24    # au-dela, appliquer meme hors heures creuses
+                             # (Pi eteint la nuit)
+
 # Couleurs UI
 COLOR_BG = "#1e293b"
 COLOR_FG = "#f1f5f9"

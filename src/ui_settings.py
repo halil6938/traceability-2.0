@@ -81,7 +81,17 @@ class SettingsScreen(tk.Frame):
                     bg=config.COLOR_DANGER, font=config.FONT_MED
                     ).pack(side="right", expand=True, fill="x", padx=3)
 
+        tk.Label(self, text=self._version_line(), bg=config.COLOR_BG,
+                 fg=config.COLOR_MUTED, font=config.FONT_SMALL, anchor="e"
+                 ).pack(fill="x", padx=20, pady=(0, 4))
+
         self._render()
+
+    def _version_line(self):
+        """Identite de ce Pi + version du code deployee (support a distance)."""
+        from . import remote_lock
+        commit = (database.get_meta("deployed_commit", "") or "")[:7]
+        return f"{remote_lock.device_id()}  ·  version {commit or 'inconnue'}"
 
     def _render(self):
         for w in self.list_frame.winfo_children():

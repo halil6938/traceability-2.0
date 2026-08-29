@@ -85,7 +85,7 @@ def cached_state():
     return locked, message, cfg
 
 
-_AUTHORIZED = {"locked": False, "message": "", "config": {}}
+_AUTHORIZED = {"locked": False, "message": "", "config": {}, "update": "auto"}
 
 
 def _fetch():
@@ -116,6 +116,7 @@ def _fetch():
         "locked": bool(entry.get("locked", False)),
         "message": str(entry.get("message", "")),
         "config": entry.get("config") or {},
+        "update": str(entry.get("update", "auto")),
     }
 
 
@@ -131,7 +132,8 @@ def refresh():
     database.set_meta("remote_locked", "1" if entry["locked"] else "0")
     database.set_meta("remote_lock_msg", entry["message"])
     database.set_meta("remote_config", json.dumps(entry["config"]))
+    database.set_meta("remote_update", entry["update"])
     apply_config(entry["config"])
-    logger.info("etat distant : locked=%s config=%s",
-                entry["locked"], entry["config"])
+    logger.info("etat distant : locked=%s update=%s config=%s",
+                entry["locked"], entry["update"], entry["config"])
     return entry["locked"], entry["message"]
