@@ -9,7 +9,12 @@ import cv2
 import numpy as np
 from PIL import Image, ImageTk
 
-from . import config, usb_manager
+from . import config, database, usb_manager
+
+# Calibration de la mise au point (balayage LensPosition)
+CAL_COARSE_STEPS = 16   # positions balayees en passe large
+CAL_FINE_STEPS = 9      # positions en passe fine autour du meilleur
+CAL_SETTLE_MS = 350     # stabilisation de la lentille avant mesure
 
 try:
     from picamera2 import Picamera2
@@ -36,11 +41,20 @@ class CameraScanScreen(tk.Frame):
         status_color = config.COLOR_WARNING if test_mode else "white"
         self.status = tk.Label(bar, text=status_text,
                                fg=status_color, bg="black", font=config.FONT_MED)
-        self.status.pack(side="left", padx=12)
         tk.Button(bar, text="← Retour", font=config.FONT_MED,
                   command=self._back, bg=config.COLOR_CARD, fg="white",
                   activebackground=config.COLOR_MUTED, bd=0, padx=16, pady=4
                   ).pack(side="right", padx=8, pady=4)
+        if test_mode:
+            tk.Button(bar, text="↺ Auto", font=config.FONT_MED,
+                      command=self._clear_calibration, bg=config.COLOR_CARD,
+                      fg="white", bd=0, padx=12, pady=4
+                      ).pack(side="right", padx=4, pady=4)
+            tk.Button(bar, text="🎯 Calibrer", font=config.FONT_MED,
+                      command=self._start_calibration, bg=config.COLOR_PRIMARY,
+                      fg="white", bd=0, padx=12, pady=4
+                      ).pack(side="right", padx=4, pady=4)
+        self.status.pack(side="left", padx=12)
 
         self.flash = tk.Frame(self, bg="white")  # overlay flash au moment de la capture
 
@@ -50,6 +64,8 @@ class CameraScanScreen(tk.Frame):
         self._capturing = False
         self._sharp_max = 0.0  # meilleur score de nettete vu (mode test)
         self._last_activity = time.time()  # derniere detection d'etiquette
+        self._cal = None          # calibration en cours (etat du balayage)
+        self._cal_done_at = 0.0   # pour garder le message de fin affiche
 
         self._init_camera()
         self.after(10, self._loop)
@@ -63,19 +79,64 @@ class CameraScanScreen(tk.Frame):
         except Exception:
             pass  # si le controle n'est pas supporte, on ignore
 
-    def _enable_autofocus_picamera(self):
-        """Regle la mise au point. Module AF (OV5647-AF, Camera v3...) :
-        - FOCUS_DISTANCE_CM > 0 : focus fige a cette distance (LensPosition,
-          en dioptries = 100/cm) — fiable pour un montage a distance fixe ;
-        - sinon : autofocus continu si le pilote l'expose (AfMode).
+    def _calibrated_lens(self):
+        """Position de lentille calibree (Test camera > Calibrer), ou None."""
+        try:
+            v = database.get_meta("camera_lens_position", "")
+            return float(v) if v else None
+        except (TypeError, ValueError):
+            return None
+
+    def _lens_range(self):
+        """(min, max) de LensPosition, ou None si pas de moteur de focus."""
+        try:
+            lo, hi = self.picam.camera_controls["LensPosition"][:2]
+            return float(lo), float(hi)
+        except Exception:
+            return None
+
+    def _set_lens(self, pos):
+        """Fige la mise au point a une position donnee. Passe explicitement en
+        AF MANUEL : sans cela l'autofocus continu repousse la lentille."""
+        rng = self._lens_range()
+        if rng is None:
+            return False
+        lo, hi = rng
+        ctrls = {"LensPosition": max(lo, min(hi, float(pos)))}
+        try:
+            from libcamera import controls
+            ctrls["AfMode"] = controls.AfModeEnum.Manual
+        except Exception:
+            pass
+        try:
+            self.picam.set_controls(ctrls)
+            return True
+        except Exception:
+            return False
+
+    def _focus_is_fixed(self):
+        return self._calibrated_lens() is not None or bool(config.FOCUS_DISTANCE_CM)
+
+    def _apply_focus(self):
+        """Regle la mise au point, par ordre de priorite :
+        1) position CALIBREE — mesuree sur ce montage, la plus fiable ;
+        2) FOCUS_DISTANCE_CM — dioptries = 100/cm (objectif suppose calibre) ;
+        3) autofocus continu si le pilote l'expose (peu fiable sur les modules
+           clones : la lentille peut rester ou elle etait).
         Necessite dtoverlay=ov5647,vcm dans /boot/firmware/config.txt."""
+        if not HAS_PICAMERA:
+            return
         try:
             ctrls = self.picam.camera_controls
-            if "LensPosition" in ctrls and config.FOCUS_DISTANCE_CM:
-                lp = 100.0 / config.FOCUS_DISTANCE_CM
-                lo, hi = ctrls["LensPosition"][0], ctrls["LensPosition"][1]
-                self.picam.set_controls({"LensPosition": max(lo, min(hi, lp))})
-            elif "AfMode" in ctrls:
+            if "LensPosition" in ctrls:
+                cal = self._calibrated_lens()
+                if cal is not None:
+                    self._set_lens(cal)
+                    return
+                if config.FOCUS_DISTANCE_CM:
+                    self._set_lens(100.0 / config.FOCUS_DISTANCE_CM)
+                    return
+            if "AfMode" in ctrls:
                 from libcamera import controls
                 self.picam.set_controls({"AfMode": controls.AfModeEnum.Continuous})
         except Exception:
@@ -101,7 +162,7 @@ class CameraScanScreen(tk.Frame):
             self.picam.configure(self._make_preview_config())
             self.picam.start()
             self._set_full_fov()
-            self._enable_autofocus_picamera()
+            self._apply_focus()
             self.capture_fn = self._capture_picamera
             self.read_fn = self._read_picamera
         else:
@@ -147,8 +208,8 @@ class CameraScanScreen(tk.Frame):
         self.picam.configure(hi_cfg)
         self.picam.start()
         self._set_full_fov()
-        self._enable_autofocus_picamera()
-        if config.FOCUS_DISTANCE_CM and "LensPosition" in self.picam.camera_controls:
+        self._apply_focus()
+        if self._focus_is_fixed() and self._lens_range() is not None:
             time.sleep(0.8)  # focus fige : laisser expo + lentille se stabiliser
         else:
             # Declencher un cycle d'autofocus complet avant la photo (cameras AF)
@@ -168,7 +229,7 @@ class CameraScanScreen(tk.Frame):
         self.picam.configure(self._make_preview_config())
         self.picam.start()
         self._set_full_fov()
-        self._enable_autofocus_picamera()
+        self._apply_focus()
         return buf.getvalue()
 
     def _capture_opencv(self) -> bytes:
@@ -263,13 +324,17 @@ class CameraScanScreen(tk.Frame):
         return best
 
     # --- boucle preview ---
-    def _update_sharpness(self, frame):
-        """Mode test : score de nettete (variance du laplacien) sur la zone
-        centrale, affiche dans la barre de statut. L'image n'est pas modifiee."""
+    def _sharpness(self, frame):
+        """Nettete de la zone centrale (variance du laplacien)."""
         gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
         h, w = gray.shape
-        score = cv2.Laplacian(gray[h // 4:3 * h // 4, w // 4:3 * w // 4],
-                              cv2.CV_64F).var()
+        return cv2.Laplacian(gray[h // 4:3 * h // 4, w // 4:3 * w // 4],
+                             cv2.CV_64F).var()
+
+    def _update_sharpness(self, frame):
+        """Mode test : score de nettete affiche dans la barre de statut.
+        L'image n'est pas modifiee."""
+        score = self._sharpness(frame)
         self._sharp_max = max(self._sharp_max, score)
         ratio = score / self._sharp_max if self._sharp_max > 0 else 0.0
         color = (config.COLOR_SUCCESS if ratio > 0.8 else
@@ -287,6 +352,99 @@ class CameraScanScreen(tk.Frame):
         self._tkimg = ImageTk.PhotoImage(img)
         self.preview_label.config(image=self._tkimg)
 
+    # --- calibration de la mise au point ---
+
+    def _start_calibration(self):
+        """Balaye toutes les positions de lentille, mesure la nettete a chacune
+        et retient la meilleure. Deroule par after() (pas de thread) : l'UI
+        reste vivante et le preview montre le balayage en direct."""
+        if self._cal is not None:
+            return
+        if not HAS_PICAMERA or self._lens_range() is None:
+            self.status.config(
+                text="Calibration impossible : pas de moteur de mise au point",
+                fg=config.COLOR_DANGER)
+            self._cal_done_at = time.time()
+            return
+        lo, hi = self._lens_range()
+        step = (hi - lo) / (CAL_COARSE_STEPS - 1)
+        self._cal = {
+            "positions": [lo + i * step for i in range(CAL_COARSE_STEPS)],
+            "i": 0, "best": None, "best_score": -1.0, "phase": "1/2",
+        }
+        self._cal_next()
+
+    def _cal_next(self):
+        """Deplace la lentille, puis mesure apres stabilisation."""
+        cal = self._cal
+        if cal is None or self._stop:
+            return
+        self._set_lens(cal["positions"][cal["i"]])
+        self.status.config(
+            text=f"Calibration {cal['phase']} — {cal['i'] + 1}/{len(cal['positions'])} "
+                 "… laissez le ticket bien en place",
+            fg=config.COLOR_WARNING)
+        self.after(CAL_SETTLE_MS, self._cal_measure)
+
+    def _cal_measure(self):
+        cal = self._cal
+        if cal is None or self._stop:
+            return
+        frame = self.read_fn()
+        if frame is None:
+            self.after(80, self._cal_measure)
+            return
+        score = self._sharpness(frame)
+        if score > cal["best_score"]:
+            cal["best_score"] = score
+            cal["best"] = cal["positions"][cal["i"]]
+        cal["i"] += 1
+        if cal["i"] < len(cal["positions"]):
+            self._cal_next()
+        elif cal["phase"] == "1/2":
+            # Passe fine autour du meilleur point de la passe large
+            lo, hi = self._lens_range()
+            span = (hi - lo) / (CAL_COARSE_STEPS - 1)
+            start = max(lo, cal["best"] - span)
+            end = min(hi, cal["best"] + span)
+            step = (end - start) / (CAL_FINE_STEPS - 1) if CAL_FINE_STEPS > 1 else 0
+            cal.update(positions=[start + i * step for i in range(CAL_FINE_STEPS)],
+                       i=0, phase="2/2")
+            self._cal_next()
+        else:
+            self._finish_calibration()
+
+    def _finish_calibration(self):
+        best, score = self._cal["best"], self._cal["best_score"]
+        self._cal = None
+        self._cal_done_at = time.time()
+        if best is None:
+            self.status.config(text="Calibration echouee — reessayez",
+                               fg=config.COLOR_DANGER)
+            return
+        database.set_meta("camera_lens_position", f"{best:.3f}")
+        self._set_lens(best)
+        self._sharp_max = 0.0  # repartir sur une echelle de nettete propre
+        self.status.config(
+            text=f"✓ Mise au point calibrée et figée (netteté {score:.0f}) — "
+                 "identique à chaque démarrage",
+            fg=config.COLOR_SUCCESS)
+
+    def _clear_calibration(self):
+        """Oublie la calibration : retour a l'autofocus automatique."""
+        if self._cal is not None:
+            return
+        database.set_meta("camera_lens_position", "")
+        self._sharp_max = 0.0
+        self._cal_done_at = time.time()
+        try:
+            from libcamera import controls
+            self.picam.set_controls({"AfMode": controls.AfModeEnum.Continuous})
+        except Exception:
+            pass
+        self.status.config(text="Calibration effacée — autofocus automatique",
+                           fg=config.COLOR_WARNING)
+
     def _loop(self):
         if self._stop:
             return
@@ -294,7 +452,8 @@ class CameraScanScreen(tk.Frame):
         if frame is not None:
             if self.test_mode:
                 # Image brute : ni detection, ni trace, ni capture
-                self._update_sharpness(frame)
+                if self._cal is None and time.time() - self._cal_done_at > 5:
+                    self._update_sharpness(frame)
             else:
                 rect = self._detect_rectangle(frame)
                 if rect is not None:

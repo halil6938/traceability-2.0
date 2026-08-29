@@ -82,6 +82,24 @@ traceability/
 
 Si l'USB est absente au moment d'une photo, elle est stockée localement puis synchronisée automatiquement dès la reconnexion.
 
+## Mise au point de la caméra (module autofocus)
+
+Sur les modules AF clones (OV5647-AF…), l'autofocus continu n'est pas fiable :
+le pilote expose bien le moteur, mais la lentille peut rester où elle était —
+d'où une image nette un jour et floue après un redémarrage.
+
+Comme la caméra est montée à distance fixe, on **calibre une fois** :
+
+1. Placer un ticket à la distance de travail définitive (support en place).
+2. **Paramètres → 📷 Test caméra → 🎯 Calibrer** (~10 s) : l'appli balaye toutes
+   les positions de lentille, mesure la netteté à chacune (passe large puis
+   fine) et **fige la meilleure**, enregistrée en base (`camera_lens_position`).
+3. La mise au point est alors identique à chaque démarrage, sans autofocus.
+
+**↺ Auto** efface la calibration et revient à l'autofocus automatique.
+Prérequis : `dtoverlay=ov5647,vcm` dans `/boot/firmware/config.txt`
+(+ `camera_auto_detect=0`) pour que le moteur de mise au point soit piloté.
+
 ## Premier lancement
 
 Un assistant demande d'ajouter au moins un appareil (nom, seuil min/max). Modifiable ensuite dans Paramètres.
