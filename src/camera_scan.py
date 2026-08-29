@@ -2,6 +2,7 @@
 import tkinter as tk
 from datetime import datetime
 from pathlib import Path
+import copy
 import threading
 import time
 
@@ -21,6 +22,75 @@ try:
     HAS_PICAMERA = True
 except ImportError:
     HAS_PICAMERA = False
+
+# Algorithme d'autofocus a injecter dans le tuning libcamera du capteur.
+# Le tuning d'origine de l'OV5647 (capteur concu a focale fixe) ne contient
+# aucun bloc "rpi.af" : l'IPA refuse alors toute commande de position
+# ("Could not set LENS_POSITION - no AF algorithm") et le moteur reste
+# immobile, meme avec dtoverlay=ov5647,vcm. Sans ce bloc, ni l'autofocus ni
+# la calibration ne peuvent fonctionner.
+DEFAULT_AF = {
+    "ranges": {
+        "normal": {"min": 0.0, "max": 15.0, "default": 1.0},
+        "macro": {"min": 2.0, "max": 15.0, "default": 6.0},
+    },
+    "speeds": {
+        "normal": {
+            "step_coarse": 1.0,
+            "step_fine": 0.25,
+            "contrast_ratio": 0.75,
+            "pdaf_gain": -0.02,
+            "pdaf_squelch": 0.125,
+            "max_slew": 2.0,
+            "pdaf_frames": 20,
+            "dropout_frames": 6,
+            "step_frames": 4,
+        }
+    },
+    "conf_epsilon": 8,
+    "conf_thresh": 12,
+    "conf_clip": 512,
+    "skip_frames": 5,
+    # Correspondance dioptries -> code DAC du moteur. Valeurs generiques : la
+    # calibration balaye la plage et retient le meilleur point, elle n'a pas
+    # besoin que cette correspondance soit exacte.
+    "map": [0.0, 0, 15.0, 1023],
+}
+# Capteurs dont le tuning fourni contient deja un bloc AF de reference
+AF_DONORS = ("imx708.json", "imx708_wide.json", "imx519.json")
+
+
+def tuning_with_af(model):
+    """Tuning libcamera du capteur, enrichi de l'algorithme AF.
+    Retourne None s'il n'y a rien a faire (bloc deja present) ou si le
+    fichier de tuning est introuvable."""
+    if not HAS_PICAMERA or not model:
+        return None
+    try:
+        tuning = Picamera2.load_tuning_file(f"{model}.json")
+    except Exception:
+        return None
+    algos = tuning.get("algorithms")
+    if not isinstance(algos, list) or any("rpi.af" in a for a in algos):
+        return None
+    af = None
+    for donor in AF_DONORS:  # reprendre un bloc AF valide du systeme si possible
+        try:
+            for a in Picamera2.load_tuning_file(donor).get("algorithms", []):
+                if "rpi.af" in a:
+                    af = copy.deepcopy(a["rpi.af"])
+                    break
+        except Exception:
+            continue
+        if af:
+            break
+    if af is None:
+        af = copy.deepcopy(DEFAULT_AF)
+    # Moteur generique : plage complete du DAC et plage de mise au point large
+    af["map"] = list(DEFAULT_AF["map"])
+    af["ranges"] = copy.deepcopy(DEFAULT_AF["ranges"])
+    algos.append({"rpi.af": af})
+    return tuning
 
 
 class CameraScanScreen(tk.Frame):
@@ -154,10 +224,33 @@ class CameraScanScreen(tk.Frame):
                 main={"size": config.PREVIEW_RESOLUTION, "format": "RGB888"}
             )
 
+    def _open_picamera(self):
+        """Ouvre la camera avec l'algorithme AF injecte dans le tuning ; repli
+        sur l'ouverture standard si cela echoue. Le modele du capteur est
+        memorise pour eviter une double ouverture aux lancements suivants."""
+        model = database.get_meta("camera_model", "")
+        if not model:
+            cam = Picamera2()
+            model = str(cam.camera_properties.get("Model", "")).lower()
+            database.set_meta("camera_model", model)
+            if tuning_with_af(model) is None:
+                return cam  # tuning deja complet : on garde cette instance
+            try:
+                cam.close()
+            except Exception:
+                pass
+        tuning = tuning_with_af(model)
+        if tuning is None:
+            return Picamera2()
+        try:
+            return Picamera2(tuning=tuning)
+        except Exception:
+            return Picamera2()
+
     def _init_camera(self):
         preview_size = config.PREVIEW_RESOLUTION
         if HAS_PICAMERA:
-            self.picam = Picamera2()
+            self.picam = self._open_picamera()
             self.picam.configure(self._make_preview_config())
             self.picam.start()
             self._set_full_fov()
