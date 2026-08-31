@@ -1,10 +1,11 @@
 """Menu principal + routeur d'écrans."""
 import tkinter as tk
-import threading
-from datetime import date, datetime, timedelta
 import os
+import threading
+import time
+from datetime import date, datetime, timedelta
 
-from . import config, database, usb_manager, remote_lock, updater
+from . import config, database, usb_manager, remote_lock, screen, updater
 from .camera_scan import CameraScanScreen
 from .ui_temperature import TemperatureScreen
 from .ui_history import HistoryScreen
@@ -52,6 +53,14 @@ class App(tk.Tk):
 
         # Mise a jour automatique du code depuis GitHub
         self.after(60_000, self._update_tick)
+
+        # Veille de l'ecran, geree par l'appli (voir _sleep)
+        self._sleep_overlay = None
+        self._last_touch = time.time()
+        screen.disable_os_blanking()
+        for evt in ("<Button-1>", "<ButtonRelease-1>", "<Key>"):
+            self.bind_all(evt, self._note_activity, add="+")
+        self.after(30_000, self._sleep_tick)
 
         # Sync USB periodique
         self.after(1500, self._periodic_sync)
@@ -186,6 +195,41 @@ class App(tk.Tk):
             purge.purge_old_photos()
         except Exception:
             pass
+
+    # --- Veille de l'ecran ---
+
+    def _note_activity(self, _event=None):
+        self._last_touch = time.time()
+
+    def _sleep_tick(self):
+        if (config.SCREEN_OFF_S and self._sleep_overlay is None
+                and time.time() - self._last_touch > config.SCREEN_OFF_S):
+            self._sleep()
+        self.after(10_000, self._sleep_tick)
+
+    def _sleep(self):
+        """Met l'ecran en veille : voile noir + extinction du retroeclairage.
+
+        Le voile est essentiel : il ABSORBE le contact qui reveille l'appareil,
+        qui sinon declencherait le bouton situe sous le doigt et ferait
+        atterrir l'operateur dans un menu au hasard.
+        """
+        overlay = tk.Frame(self, bg="black", cursor="none")
+        overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
+        overlay.lift()
+        overlay.bind("<Button-1>", lambda e: "break")   # le contact ne passe pas
+        overlay.bind("<ButtonRelease-1>", self._wake)
+        self._sleep_overlay = overlay
+        threading.Thread(target=screen.off, daemon=True).start()
+
+    def _wake(self, _event=None):
+        """Premier contact : on rallume, sans rien declencher d'autre."""
+        if self._sleep_overlay is not None:
+            self._sleep_overlay.destroy()
+            self._sleep_overlay = None
+        self._last_touch = time.time()
+        threading.Thread(target=screen.on, daemon=True).start()
+        return "break"
 
     # --- Mise a jour automatique ---
 

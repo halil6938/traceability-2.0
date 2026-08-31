@@ -40,6 +40,8 @@ RECT_ABSENT_FRAMES = 8            # apres une photo, frames consecutifs SANS
                                   # temps de retirer le ticket)
 SCAN_INACTIVITY_S = 180           # retour auto au menu si aucune etiquette
                                   # detectee pendant ce delai (mode scan)
+SCREEN_OFF_S = 600                # veille de l'ecran apres ce delai sans
+                                  # contact (0 = jamais de veille)
 
 # Retention photos (6 mois)
 PHOTO_RETENTION_DAYS = 180

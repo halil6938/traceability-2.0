@@ -32,7 +32,7 @@ Nouveau client : copier `_modele.json` en `<hostname>.json` (voir `hostname` sur
   s'affiche. Le blocage est mémorisé localement → il **survit au redémarrage** de
   l'appli et du Pi, et à une coupure internet. Débloquer : remettre `locked: false`.
 - **Régler à distance** (`config`) : liste blanche = `COLOR_*` (format `#rrggbb`),
-  `SCAN_INACTIVITY_S`, `RECT_STABLE_FRAMES`, `PHOTO_RETENTION_DAYS`,
+  `SCAN_INACTIVITY_S`, `SCREEN_OFF_S`, `RECT_STABLE_FRAMES`, `PHOTO_RETENTION_DAYS`,
   `FOCUS_DISTANCE_CM`, `CAMERA_ROTATION`. Une valeur inconnue/invalide est ignorée.
   Les changements de couleur s'appliquent au retour au menu (ou au redémarrage).
 - Une coupure réseau **conserve le dernier état connu** (jamais de blocage accidentel).
@@ -75,6 +75,19 @@ traceability/
 1. Copier le dossier `traceability/` sur le Pi (clé USB, SCP, git clone...).
 2. `cd traceability && bash install.sh`
 3. Redémarrer : l'appli se lance automatiquement.
+
+## Veille de l'écran
+
+Après `SCREEN_OFF_S` secondes sans contact (600 par défaut, `0` = jamais),
+l'application éteint l'écran : rétroéclairage coupé **et** voile noir plein écran.
+
+Ce voile est le point important : il **absorbe le contact qui réveille
+l'appareil**. Avec la veille du système, ce contact est transmis à l'application
+et déclenche le bouton situé sous le doigt — l'opérateur se retrouve alors dans
+un menu au hasard. Ici, le premier contact ne fait que rallumer.
+
+L'appli désactive donc la veille du système au démarrage (`xset`) pour en garder
+la maîtrise. Le délai est réglable à distance (`SCREEN_OFF_S` dans `config`).
 
 ## Mise à jour automatique du code
 

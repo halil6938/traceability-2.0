@@ -48,6 +48,7 @@ CONFIG_WHITELIST = {
     "COLOR_SUCCESS": _color, "COLOR_DANGER": _color, "COLOR_WARNING": _color,
     "COLOR_CARD": _color, "COLOR_MUTED": _color,
     "SCAN_INACTIVITY_S": _posint, "RECT_STABLE_FRAMES": _posint,
+    "SCREEN_OFF_S": _posint,
     "PHOTO_RETENTION_DAYS": _posint, "FOCUS_DISTANCE_CM": _posint,
     "CAMERA_ROTATION": _posint,
 }

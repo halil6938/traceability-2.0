@@ -245,6 +245,10 @@ def build(path):
              "python3 ~/traceability-app/tools/focus_probe.py   # test du focus"),
         Paragraph("Le code se met a jour tout seul depuis GitHub : rien a "
                   "transferer sur les Pi apres une correction.", S_BODY),
+        Spacer(1, 3),
+        Paragraph("L'ecran se met en veille apres 10 minutes sans contact. Le "
+                  "premier contact rallume seulement : il ne declenche aucun "
+                  "bouton. Delai reglable a distance (SCREEN_OFF_S).", S_BODY),
     ]))
 
     doc.build(st)
