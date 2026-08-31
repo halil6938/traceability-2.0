@@ -533,7 +533,7 @@ class SettingsScreen(tk.Frame):
 
         btn_row = tk.Frame(bottom, bg=config.COLOR_BG)
         btn_row.pack(fill="x")
-        tk.Button(btn_row, text="🔍 Tester la lecture",
+        tk.Button(btn_row, text="🔍 Tester",
                   font=config.FONT_MED,
                   bg=config.COLOR_PRIMARY, fg="white", bd=0, padx=12, pady=8,
                   command=read_now).pack(side="left", expand=True, fill="x", padx=(0, 3))
@@ -541,14 +541,14 @@ class SettingsScreen(tk.Frame):
                   font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=12, pady=8,
                   command=add_ble).pack(side="left", expand=True, fill="x", padx=3)
-        tk.Button(btn_row, text="⌨", font=config.FONT_MED,
+        tk.Button(btn_row, text="⌨ Adresse", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=8,
                   command=add_ble_manual).pack(side="left", padx=(0, 3))
         tk.Button(btn_row, text="🌐 Ajouter WiFi",
                   font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=12, pady=8,
                   command=add_wifi).pack(side="left", expand=True, fill="x", padx=3)
-        tk.Button(btn_row, text="🔑", font=config.FONT_MED,
+        tk.Button(btn_row, text="🔑 Clés", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=8,
                   command=ask_tuya_keys).pack(side="left", padx=(3, 0))
         logger.info("ecran capteurs : pret")

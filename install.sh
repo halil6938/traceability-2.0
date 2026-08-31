@@ -11,7 +11,8 @@ echo ">>> Installation des dependances systeme..."
 sudo apt-get update
 sudo apt-get install -y python3 python3-pip python3-tk python3-picamera2 \
                         python3-pil python3-pil.imagetk \
-                        libopenjp2-7 libopenblas0 fonts-dejavu
+                        libopenjp2-7 libopenblas0 fonts-dejavu \
+                        fonts-symbola
 
 echo ">>> Copie de l'application vers $APP_DIR..."
 mkdir -p "$APP_DIR"
