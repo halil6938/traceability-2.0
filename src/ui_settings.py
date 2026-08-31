@@ -1,17 +1,30 @@
 """Ecran parametres : gerer les appareils, lancer purge, export PDF, quitter."""
 import tkinter as tk
+import logging
 import sys
 import threading
 from datetime import date
 from . import config, database, pdf_export
 from .ui_common import (make_button, text_popup, numpad_popup, info, confirm,
-                        error, open_modal, close_modal, close_all_modals)
+                        error, close_all_modals)
+
+logger = logging.getLogger(__name__)
+if not logger.handlers:
+    _h = logging.FileHandler(config.LOG_DIR / "ui.log")
+    _h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    logger.addHandler(_h)
+    logger.setLevel(logging.INFO)
 
 
 def _pick_device(parent, sensor, devices, on_done):
-    """Popup de selection d'un appareil pour un capteur."""
-    h = min(90 + len(devices) * 54 + 54, 400)
-    pick = open_modal(parent, 380, h, config.COLOR_SUCCESS)
+    """Choix de l'appareil associe a un capteur. Cadre superpose et non
+    fenetre modale : voir _ble_config (les modales figent l'appli sur le Pi)."""
+    h = min(90 + len(devices) * 54 + 54, config.SCREEN_H - 40)
+    pick = tk.Frame(parent, bg=config.COLOR_BG, highlightthickness=4,
+                    highlightbackground=config.COLOR_SUCCESS,
+                    highlightcolor=config.COLOR_SUCCESS)
+    pick.place(relx=0.5, rely=0.5, anchor="center", width=380, height=h)
+    pick.lift()
 
     tk.Label(pick, text=f"Assigner '{sensor['label']}' a :",
              bg=config.COLOR_BG, fg=config.COLOR_FG,
@@ -19,7 +32,7 @@ def _pick_device(parent, sensor, devices, on_done):
 
     def choose(device_id):
         database.update_ble_sensor(sensor["id"], sensor["label"], device_id)
-        close_modal(pick)
+        pick.destroy()
         on_done()
 
     for d in devices:
@@ -32,7 +45,10 @@ def _pick_device(parent, sensor, devices, on_done):
     tk.Button(pick, text="— Desassigner —", font=config.FONT_SMALL,
               bg=config.COLOR_DANGER, fg="white", bd=0, padx=12, pady=6,
               command=lambda: choose(None)
-              ).pack(fill="x", padx=16, pady=(6, 8))
+              ).pack(fill="x", padx=16, pady=(6, 4))
+    tk.Button(pick, text="Annuler", font=config.FONT_SMALL,
+              bg=config.COLOR_CARD, fg="white", bd=0, padx=12, pady=6,
+              command=pick.destroy).pack(fill="x", padx=16, pady=(0, 8))
 
 
 class SettingsScreen(tk.Frame):
@@ -190,14 +206,19 @@ class SettingsScreen(tk.Frame):
             self._render()
 
     def _ble_config(self):
-        """Popup de configuration des capteurs de temperature (BLE + WiFi)."""
-        sensors = database.list_ble_sensors()
-        h = max(340, 80 + len(sensors) * 90 + 140)
-        h = min(h, config.SCREEN_H - 10)
-        top = open_modal(self, 460, h)
+        """Ecran de configuration des capteurs de temperature (BLE + WiFi).
+
+        Cadre plein ecran (place) et NON fenetre modale : sur le Pi, une
+        fenetre modale a focus exclusif s'est revelee capable de figer toute
+        l'appli. Un cadre ne peut pas capter le focus ni passer derriere."""
+        logger.info("ecran capteurs : ouverture")
+        top = tk.Frame(self, bg=config.COLOR_BG)
+        top.place(relx=0, rely=0, relwidth=1, relheight=1)
+        top.lift()
+        logger.info("ecran capteurs : cadre cree")
 
         def close_top():
-            close_modal(top)
+            top.destroy()
 
         # Titre
         hdr = tk.Frame(top, bg=config.COLOR_BG)
@@ -265,6 +286,7 @@ class SettingsScreen(tk.Frame):
                          anchor="w").pack(anchor="w")
 
         render()
+        logger.info("ecran capteurs : liste affichee")
 
         # Bouton Lire maintenant
         bottom = tk.Frame(top, bg=config.COLOR_BG)
@@ -382,11 +404,16 @@ class SettingsScreen(tk.Frame):
                 status_var.set("")
                 existing = {s["mac"].lower() for s in database.list_ble_sensors()}
 
-                ph = min(90 + len(devs) * 58, config.SCREEN_H - 10)
-                pick = open_modal(top, 400, ph, config.COLOR_PRIMARY)
+                ph = min(90 + len(devs) * 58, config.SCREEN_H - 40)
+                pick = tk.Frame(top, bg=config.COLOR_BG, highlightthickness=4,
+                                highlightbackground=config.COLOR_PRIMARY,
+                                highlightcolor=config.COLOR_PRIMARY)
+                pick.place(relx=0.5, rely=0.5, anchor="center",
+                           width=400, height=ph)
+                pick.lift()
 
                 def close_pick():
-                    close_modal(pick)
+                    pick.destroy()
 
                 tk.Label(pick, text="Choisir le capteur a ajouter :",
                          bg=config.COLOR_BG, fg=config.COLOR_FG,
@@ -431,8 +458,7 @@ class SettingsScreen(tk.Frame):
         tk.Button(btn_row, text="🔑", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=8,
                   command=ask_tuya_keys).pack(side="left", padx=(3, 0))
-
-        self.wait_window(top)
+        logger.info("ecran capteurs : pret")
 
     def _export_pdf(self):
         today = date.today()
