@@ -3,60 +3,56 @@ import tkinter as tk
 from . import config
 
 
-# Modales actuellement ouvertes : permet de tout refermer si une erreur
-# survient pendant leur construction (sinon le grab reste et l'appli est figee)
+# AUCUNE fenetre modale dans cette appli.
+#
+# Sur le Pi, l'appli tourne en plein ecran -topmost. Un Toplevel modal
+# (focus exclusif via grab_set) s'y est revele capable de figer completement
+# l'application : la fenetre passe derriere la fenetre principale, ou n'est
+# pas refermable, mais capte tous les clics -> plus rien ne repond, et il faut
+# redemarrer le service. Le probleme est survenu sur plusieurs ecrans.
+#
+# Tout ce qui « s'ouvre par-dessus » est donc un CADRE superpose : un voile
+# plein ecran (qui absorbe les clics et donne l'effet modal) contenant un
+# panneau centre. Un cadre ne prend jamais le focus exclusif et ne peut pas
+# passer derriere la fenetre principale : il ne peut donc pas figer l'appli.
+# L'API est inchangee pour les appelants (parent.wait_window fonctionne aussi
+# bien sur un cadre que sur une fenetre).
 _OPEN_MODALS = []
 
 
 def open_modal(parent, w, h, color=None):
-    """Cree un popup modal overrideredirect de facon fiable sur le Pi (X11) :
-    fenetre positionnee, RELEVEE au-dessus de la fenetre plein ecran, et rendue
-    affichable AVANT grab_set (sinon 'grab failed: window not viewable', ou
-    pire : une fenetre invisible qui capte les clics = appli figee).
+    """Panneau superpose et centre, en remplacement des fenetres modales.
     Fermer avec close_modal()."""
-    top = tk.Toplevel(parent)
-    top.configure(bg=config.COLOR_BG)
-    top.overrideredirect(True)
-    style_popup(top, color)
-    x = (config.SCREEN_W - w) // 2
-    y = (config.SCREEN_H - h) // 2
-    top.geometry(f"{w}x{h}+{x}+{y}")
-    top.transient(parent)
-    top.update_idletasks()
-    try:  # la fenetre racine est -topmost : sans cela le popup passe DESSOUS
-        top.attributes("-topmost", True)
-    except Exception:
-        pass
-    top.lift()
-    try:
-        top.grab_set()
-    except Exception:
-        pass
-    top.bind("<Escape>", lambda e: close_modal(top))  # sortie de secours
-    _OPEN_MODALS.append(top)
-    return top
+    root = parent.winfo_toplevel()
+    veil = tk.Frame(root, bg=config.COLOR_BG)   # absorbe les clics exterieurs
+    veil.place(relx=0, rely=0, relwidth=1, relheight=1)
+    panel = tk.Frame(veil, bg=config.COLOR_BG)
+    style_popup(panel, color)
+    panel.place(relx=0.5, rely=0.5, anchor="center",
+                width=min(w, config.SCREEN_W - 4),
+                height=min(h, config.SCREEN_H - 4))
+    veil.lift()
+    panel._veil = veil
+    _OPEN_MODALS.append(panel)
+    return panel
 
 
-def close_modal(top):
-    """Libere le grab AVANT destroy (sinon l'ecran reste fige sur le Pi)."""
-    if top in _OPEN_MODALS:
-        _OPEN_MODALS.remove(top)
+def close_modal(panel):
+    """Ferme le panneau et son voile."""
+    if panel in _OPEN_MODALS:
+        _OPEN_MODALS.remove(panel)
     try:
-        top.grab_release()
-    except Exception:
-        pass
-    try:
-        top.destroy()
+        getattr(panel, "_veil", panel).destroy()
     except Exception:
         pass
 
 
 def close_all_modals():
-    """Referme toutes les modales ouvertes : filet de securite quand une erreur
-    interrompt la construction d'un popup, qui garderait sinon le focus
-    exclusif et figerait toute l'application."""
-    for top in list(_OPEN_MODALS):
-        close_modal(top)
+    """Referme tous les panneaux ouverts : filet de securite si une erreur
+    interrompt la construction de l'un d'eux (son voile masquerait sinon
+    l'ecran)."""
+    for panel in list(_OPEN_MODALS):
+        close_modal(panel)
 
 
 def make_button(master, text, command, bg=None, fg="white", font=None, **kw):
