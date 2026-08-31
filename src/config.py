@@ -33,7 +33,7 @@ FOCUS_DISTANCE_CM = 0             # 0 = autofocus reel avant chaque photo
 CROP_TO_LABEL = True              # recadre la photo sur l'etiquette detectee
                                   # (objectif grand angle : sans cela beaucoup
                                   # de decor inutile autour du ticket)
-RECT_STABLE_FRAMES = 8            # frames consecutifs avec rectangle detecte avant capture
+RECT_STABLE_FRAMES = 5            # frames consecutifs avec rectangle detecte avant capture
 RECT_MIN_AREA_RATIO = 0.08        # aire min du rectangle / aire frame
 SCAN_INACTIVITY_S = 180           # retour auto au menu si aucune etiquette
                                   # detectee pendant ce delai (mode scan)

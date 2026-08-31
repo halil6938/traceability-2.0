@@ -123,10 +123,13 @@ class PhotoHistoryScreen(tk.Frame):
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=16, pady=4,
                   command=self._next_month).pack(side="right")
 
-        # Zone photo
-        self.photo_lbl = tk.Label(self, bg="black")
-        self.photo_lbl.pack(fill="both", expand=True)
-        self.empty_lbl = tk.Label(self, text="Aucune photo ce mois",
+        # Zone photo : le label est « place » (et non « pack ») pour qu'une
+        # grande image ne pousse jamais les barres de navigation hors de
+        # l'ecran — c'est ce qui coupait l'apercu en deux.
+        self.photo_area = tk.Frame(self, bg="black")
+        self.photo_area.pack(fill="both", expand=True)
+        self.photo_lbl = tk.Label(self.photo_area, bg="black")
+        self.empty_lbl = tk.Label(self.photo_area, text="Aucune photo ce mois",
                                   bg="black", fg=config.COLOR_MUTED,
                                   font=config.FONT_BIG)
 
@@ -163,24 +166,34 @@ class PhotoHistoryScreen(tk.Frame):
         self.idx = max(0, len(self.photos) - 1)
         self._show_current()
 
+    def _photo_area_size(self):
+        """Place reellement disponible pour la photo : l'ecran moins les barres
+        de navigation. Mesuree, donc juste quelle que soit la taille d'ecran."""
+        self.update_idletasks()
+        w = self.photo_area.winfo_width()
+        h = self.photo_area.winfo_height()
+        if w < 50 or h < 50:          # avant le tout premier affichage
+            w, h = config.SCREEN_W, max(120, config.SCREEN_H - 200)
+        return max(50, w - 8), max(50, h - 8)
+
     def _show_current(self):
         if not self.photos:
-            self.photo_lbl.pack_forget()
-            self.empty_lbl.pack(fill="both", expand=True)
+            self.photo_lbl.place_forget()
+            self.empty_lbl.place(relx=0.5, rely=0.5, anchor="center")
             self.info_lbl.config(text="")
             self.del_btn.config(state="disabled")
             return
 
         self.del_btn.config(state="normal")
 
-        self.empty_lbl.pack_forget()
-        self.photo_lbl.pack(fill="both", expand=True)
+        self.empty_lbl.place_forget()
+        self.photo_lbl.place(relx=0.5, rely=0.5, anchor="center")
 
         path = self.photos[self.idx]
         try:
             from PIL import Image, ImageTk
             img = Image.open(path)
-            img.thumbnail((config.SCREEN_W, 580), Image.LANCZOS)
+            img.thumbnail(self._photo_area_size(), Image.LANCZOS)
             self._tkimg = ImageTk.PhotoImage(img)
             self.photo_lbl.config(image=self._tkimg, text="")
         except Exception:

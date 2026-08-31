@@ -146,6 +146,8 @@ class CameraScanScreen(tk.Frame):
         self._cal = None          # calibration en cours (etat du balayage)
         self._cal_done_at = 0.0   # pour garder le message de fin affiche
         self._manual_lens = None  # position courante en reglage manuel
+        self._capture_msgs = []   # resultats de capture, lus par la boucle
+        self._flash_lbl = None
 
         self._init_camera()
         self.after(10, self._loop)
@@ -312,7 +314,7 @@ class CameraScanScreen(tk.Frame):
         self._set_full_fov()
         self._apply_focus()
         if self._focus_is_fixed() and self._lens_range() is not None:
-            time.sleep(0.8)  # focus fige : laisser expo + lentille se stabiliser
+            time.sleep(0.4)  # focus fige : laisser l'exposition se stabiliser
         else:
             # Declencher un cycle d'autofocus complet avant la photo (cameras AF)
             try:
@@ -362,14 +364,20 @@ class CameraScanScreen(tk.Frame):
         etiquette n'est trouvee sur la photo, on la garde entiere."""
         if not config.CROP_TO_LABEL:
             return rgb_array
+        # Detection sur une copie reduite : sur une photo pleine resolution
+        # elle couterait plusieurs secondes au Pi 3.
+        H, W = rgb_array.shape[:2]
+        factor = max(1, round(max(W, H) / 800))
         try:
-            rect = self._detect_rectangle(rgb_array)
+            small = (rgb_array if factor == 1 else
+                     cv2.resize(rgb_array, (W // factor, H // factor),
+                                interpolation=cv2.INTER_AREA))
+            rect = self._detect_rectangle(small)
         except Exception:
             return rgb_array
         if rect is None:
             return rgb_array
-        x, y, w, h = cv2.boundingRect(rect)
-        H, W = rgb_array.shape[:2]
+        x, y, w, h = [v * factor for v in cv2.boundingRect(rect)]
         mx, my = int(w * 0.10), int(h * 0.10)
         x0, y0 = max(0, x - mx), max(0, y - my)
         x1, y1 = min(W, x + w + mx), min(H, y + h + my)
@@ -592,6 +600,13 @@ class CameraScanScreen(tk.Frame):
     def _loop(self):
         if self._stop:
             return
+        # Resultat d'une capture terminee (le thread ne touche pas a l'UI)
+        while self._capture_msgs:
+            self._show_flash(*self._capture_msgs.pop(0))
+        if self._capturing:
+            # camera occupee par la capture : ne pas lire de frame en parallele
+            self.after(100, self._loop)
+            return
         frame = self.read_fn()
         if frame is not None:
             if self.test_mode:
@@ -612,6 +627,7 @@ class CameraScanScreen(tk.Frame):
                             and not self._capturing
                             and time.time() - self._last_capture > 2):
                         self._capturing = True
+                        self._show_capturing()  # retour visuel immediat
                         threading.Thread(target=self._do_capture, daemon=True).start()
                 else:
                     self._stable_count = max(0, self._stable_count - 1)
@@ -626,26 +642,51 @@ class CameraScanScreen(tk.Frame):
         self.after(30, self._loop)
 
     def _do_capture(self):
+        """Thread de capture : ne touche PAS a l'UI (Tk n'est pas thread-safe),
+        depose son resultat que la boucle preview affichera."""
         try:
             data = self.capture_fn()
-            if not data:
-                return
-            taken_at = datetime.now()
-            dest, on_usb = usb_manager.save_photo(data, taken_at)
-            self.after(0, lambda: self._show_flash(on_usb, dest))
+            if data:
+                dest, on_usb = usb_manager.save_photo(data, datetime.now())
+                self._capture_msgs.append((True, on_usb, dest))
+            else:
+                self._capture_msgs.append((False, False, None))
+        except Exception:
+            self._capture_msgs.append((False, False, None))
         finally:
             self._last_capture = time.time()
             self._stable_count = 0
             self._capturing = False
 
-    def _show_flash(self, on_usb: bool, dest: Path):
+    def _show_capturing(self):
+        """Retour visuel des le declenchement : l'enregistrement se poursuit
+        en arriere-plan, l'operateur sait immediatement que c'est parti."""
         self.flash.place(relx=0, rely=0, relwidth=1, relheight=1)
-        msg = "Photo enregistree sur USB" if on_usb else "USB absente : photo en attente"
-        lbl = tk.Label(self.flash, text=msg, bg="white",
-                       fg=config.COLOR_SUCCESS if on_usb else config.COLOR_WARNING,
-                       font=config.FONT_BIG)
-        lbl.place(relx=0.5, rely=0.5, anchor="center")
-        self.after(700, lambda: (lbl.destroy(), self.flash.place_forget()))
+        self._flash_lbl = tk.Label(self.flash, text="Capture…", bg="white",
+                                   fg=config.COLOR_PRIMARY, font=config.FONT_BIG)
+        self._flash_lbl.place(relx=0.5, rely=0.5, anchor="center")
+
+    def _show_flash(self, ok: bool, on_usb: bool, dest: Path):
+        if not ok:
+            msg, color = "Echec de la capture", config.COLOR_DANGER
+        elif on_usb:
+            msg, color = "Photo enregistree sur USB", config.COLOR_SUCCESS
+        else:
+            msg, color = "USB absente : photo en attente", config.COLOR_WARNING
+        self.flash.place(relx=0, rely=0, relwidth=1, relheight=1)
+        if self._flash_lbl is not None and self._flash_lbl.winfo_exists():
+            self._flash_lbl.config(text=msg, fg=color)
+        else:
+            self._flash_lbl = tk.Label(self.flash, text=msg, bg="white",
+                                       fg=color, font=config.FONT_BIG)
+            self._flash_lbl.place(relx=0.5, rely=0.5, anchor="center")
+        self.after(700, self._hide_flash)
+
+    def _hide_flash(self):
+        if self._flash_lbl is not None and self._flash_lbl.winfo_exists():
+            self._flash_lbl.destroy()
+        self._flash_lbl = None
+        self.flash.place_forget()
 
     def _back(self):
         self.destroy_camera()
