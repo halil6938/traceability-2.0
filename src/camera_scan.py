@@ -147,6 +147,8 @@ class CameraScanScreen(tk.Frame):
         self._cal_done_at = 0.0   # pour garder le message de fin affiche
         self._manual_lens = None  # position courante en reglage manuel
         self._capture_msgs = []   # resultats de capture, lus par la boucle
+        self._await_removal = False  # attend le retrait de l'etiquette photographiee
+        self._absent_count = 0       # frames consecutifs sans etiquette
         self._flash_lbl = None
 
         self._init_camera()
@@ -615,8 +617,18 @@ class CameraScanScreen(tk.Frame):
                     self._update_sharpness(frame)
             else:
                 rect = self._detect_rectangle(frame)
-                if rect is not None:
+                if rect is not None and self._await_removal:
+                    # Photo deja prise : on attend que le ticket soit retire du
+                    # champ avant d'en photographier un nouveau.
                     self._last_activity = time.time()
+                    self._absent_count = 0
+                    self._stable_count = 0
+                    cv2.drawContours(frame, [rect], -1, (255, 200, 0), 4)
+                    self.status.config(text="Photo prise — retirez l'étiquette",
+                                       fg=config.COLOR_WARNING)
+                elif rect is not None:
+                    self._last_activity = time.time()
+                    self._absent_count = 0
                     cv2.drawContours(frame, [rect], -1, (0, 255, 0), 4)
                     self._stable_count += 1
                     self.status.config(
@@ -627,11 +639,25 @@ class CameraScanScreen(tk.Frame):
                             and not self._capturing
                             and time.time() - self._last_capture > 2):
                         self._capturing = True
+                        self._await_removal = True  # une seule photo par ticket
+                        self._absent_count = 0
                         self._show_capturing()  # retour visuel immediat
                         threading.Thread(target=self._do_capture, daemon=True).start()
                 else:
                     self._stable_count = max(0, self._stable_count - 1)
-                    self.status.config(text="Recherche d'une etiquette...", fg="white")
+                    self._absent_count += 1
+                    if self._await_removal:
+                        # etiquette retiree assez longtemps : pret pour la suivante
+                        if self._absent_count >= config.RECT_ABSENT_FRAMES:
+                            self._await_removal = False
+                            self.status.config(text="Prêt pour le ticket suivant",
+                                               fg=config.COLOR_SUCCESS)
+                        else:
+                            self.status.config(text="Photo prise — retirez l'étiquette",
+                                               fg=config.COLOR_WARNING)
+                    else:
+                        self.status.config(text="Recherche d'une etiquette...",
+                                           fg="white")
                     # Retour auto au menu apres un long moment sans etiquette
                     if time.time() - self._last_activity > config.SCAN_INACTIVITY_S:
                         self._back()

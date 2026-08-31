@@ -35,6 +35,9 @@ CROP_TO_LABEL = True              # recadre la photo sur l'etiquette detectee
                                   # de decor inutile autour du ticket)
 RECT_STABLE_FRAMES = 5            # frames consecutifs avec rectangle detecte avant capture
 RECT_MIN_AREA_RATIO = 0.08        # aire min du rectangle / aire frame
+RECT_ABSENT_FRAMES = 8            # apres une photo, frames consecutifs SANS
+                                  # etiquette avant de réarmer (laisse le
+                                  # temps de retirer le ticket)
 SCAN_INACTIVITY_S = 180           # retour auto au menu si aucune etiquette
                                   # detectee pendant ce delai (mode scan)
 
