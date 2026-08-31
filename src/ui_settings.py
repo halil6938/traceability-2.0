@@ -104,9 +104,12 @@ class SettingsScreen(tk.Frame):
                 pass
 
     def _version_line(self):
-        """Identite de ce Pi + version du code deployee (support a distance)."""
-        from . import remote_lock
-        commit = (database.get_meta("deployed_commit", "") or "")[:7]
+        """Identite de ce Pi + version du code en place (support a distance)."""
+        from . import remote_lock, updater
+        try:
+            commit = updater.current_version()[:7]
+        except Exception:
+            commit = ""
         return f"{remote_lock.device_id()}  ·  version {commit or 'inconnue'}"
 
     def _render(self):

@@ -53,6 +53,21 @@ def mode():
     return value if value in ("auto", "now", "off") else "auto"
 
 
+def current_version():
+    """Version du code en place : le commit deploye par la mise a jour
+    automatique, sinon le HEAD du depot local (cas d'une installation faite a
+    la main). Chaine vide si le depot n'est pas la."""
+    commit = database.get_meta("deployed_commit", "") or ""
+    if commit:
+        return commit
+    if (Path(config.REPO_DIR) / ".git").is_dir():
+        try:
+            return _rev("HEAD") or ""
+        except Exception:
+            return ""
+    return ""
+
+
 def repo_ready():
     """Depot local pret (clone au besoin). Retourne le chemin, ou None."""
     repo = Path(config.REPO_DIR)
