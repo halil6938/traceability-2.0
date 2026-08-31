@@ -58,6 +58,10 @@ class App(tk.Tk):
         self._sleep_overlay = None
         self._last_touch = time.time()
         screen.disable_os_blanking()
+        # Rallumer systematiquement au demarrage : une mise a jour (ou un
+        # redemarrage) peut survenir pendant la veille, et le retroeclairage
+        # resterait eteint alors que l'appli se croit reveillee.
+        threading.Thread(target=screen.on, daemon=True).start()
         for evt in ("<Button-1>", "<ButtonRelease-1>", "<Key>"):
             self.bind_all(evt, self._note_activity, add="+")
         self.after(30_000, self._sleep_tick)
