@@ -140,7 +140,9 @@ Si le nom n'a pas été défini au flashage : `bash tools/set_client.sh boucheri
 **4. Sur place**, au premier démarrage :
 1. Assistant : créer les appareils (frigos/congélateurs) avec leurs seuils.
 2. **Réception → ⚙ Fournisseurs** : fournisseurs + MAC du pistolet BLE.
-3. **Paramètres → 📡 Capteurs temp.** : associer les capteurs BLE / WiFi.
+3. **Paramètres → 📡 Capteurs temp.** : **📡 Ajouter BLE** (détection des
+   capteurs à proximité, ou ⌨ pour saisir l'adresse) et **🌐 Ajouter WiFi**
+   (liste du cloud Tuya), puis **Assigner** chaque capteur à un appareil.
 4. **Paramètres → 📷 Test caméra → 🎯 Calibrer** (propre à chaque montage).
 5. Sur GitHub, créer `devices/<nom-du-client>.json` (copie de `_modele.json`)
    pour pouvoir verrouiller ce Pi à distance. Sans fichier, il fonctionne

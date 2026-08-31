@@ -68,15 +68,8 @@ def init_db():
                 FOREIGN KEY(device_id) REFERENCES devices(id) ON DELETE SET NULL
             )
         """)
-        # Capteurs par defaut (INSERT OR IGNORE = ne re-insere pas si deja present)
-        for mac, label in [
-            ("6c:33:00:00:04:34", "Capteur BLE 1"),
-            ("6c:8c:00:00:09:8c", "Capteur BLE 2"),
-        ]:
-            c.execute(
-                "INSERT OR IGNORE INTO ble_sensors(mac, label) VALUES (?,?)",
-                (mac, label),
-            )
+        # Aucun capteur par defaut : les adresses BLE sont propres a chaque
+        # client, elles s'ajoutent depuis Parametres > Capteurs temp.
 
         # Migration : type de capteur ('ble' ou 'wifi' = Tuya cloud).
         # Pour un capteur wifi, la colonne mac contient le Device ID Tuya.

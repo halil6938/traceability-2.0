@@ -258,17 +258,16 @@ class SettingsScreen(tk.Frame):
                           padx=8, pady=4,
                           command=pick).pack(side="right", padx=6, pady=6)
 
-                if is_wifi:
-                    def remove(sensor=s):
-                        if confirm(top, "Supprimer",
-                                   f"Supprimer le capteur '{sensor['label']}' ?"):
-                            database.delete_sensor(sensor["id"])
-                            render()
+                def remove(sensor=s):
+                    if confirm(top, "Supprimer",
+                               f"Supprimer le capteur '{sensor['label']}' ?"):
+                        database.delete_sensor(sensor["id"])
+                        render()
 
-                    tk.Button(row, text="Suppr", font=config.FONT_SMALL,
-                              bg=config.COLOR_DANGER, fg="white", bd=0,
-                              padx=6, pady=4, command=remove
-                              ).pack(side="right", padx=(0, 2), pady=6)
+                tk.Button(row, text="Suppr", font=config.FONT_SMALL,
+                          bg=config.COLOR_DANGER, fg="white", bd=0,
+                          padx=6, pady=4, command=remove
+                          ).pack(side="right", padx=(0, 2), pady=6)
 
                 assigned = s["device_name"] or "non assigne"
                 tk.Label(row, text=assigned, bg=config.COLOR_CARD,
@@ -445,12 +444,106 @@ class SettingsScreen(tk.Frame):
             threading.Thread(target=do, daemon=True).start()
             top.after(200, poll)
 
+        def _add_ble_sensor(mac):
+            """Enregistre un capteur BLE, nomme d'apres la fin de son adresse."""
+            mac = mac.strip().lower()
+            if len(mac) < 5:
+                return False
+            if any(s["mac"].lower() == mac for s in database.list_ble_sensors()):
+                status_var.set("⚠ Ce capteur est déjà dans la liste")
+                status_lbl.config(fg=config.COLOR_WARNING)
+                return False
+            database.add_sensor(mac, f"Capteur {mac[-5:]}", "ble")
+            render()
+            status_var.set(f"✓ Capteur {mac[-5:]} ajouté — assignez-le à un appareil")
+            status_lbl.config(fg=config.COLOR_SUCCESS)
+            return True
+
+        def add_ble():
+            """Detecte les capteurs BLE a proximite et propose de les ajouter."""
+            status_var.set("Recherche des capteurs Bluetooth… (15 s)\n"
+                           "Les capteurs doivent être allumés et à portée.")
+            status_lbl.config(fg=config.COLOR_WARNING)
+            box = {}
+
+            def do():
+                with config.BLE_LOCK:
+                    try:
+                        from . import ble_reader
+                        box["found"] = ble_reader.discover(timeout=15.0)
+                    except Exception as e:
+                        box["err"] = str(e)
+                box["done"] = True
+
+            def poll():
+                if not top.winfo_exists():
+                    return
+                if not box.get("done"):
+                    top.after(200, poll)
+                    return
+                if "err" in box:
+                    status_var.set(f"✗ {box['err']}")
+                    status_lbl.config(fg=config.COLOR_DANGER)
+                    return
+                found = box["found"]
+                existing = {s["mac"].lower() for s in database.list_ble_sensors()}
+                nouveaux = [d for d in found if d["mac"] not in existing]
+                if not nouveaux:
+                    status_var.set(
+                        "✗ Aucun nouveau capteur détecté — vérifiez qu'ils sont "
+                        "allumés et proches, ou saisissez l'adresse (⌨)."
+                        if not found else
+                        "Tous les capteurs détectés sont déjà dans la liste.")
+                    status_lbl.config(fg=config.COLOR_DANGER)
+                    return
+                status_var.set("")
+
+                ph = min(90 + len(nouveaux) * 58, config.SCREEN_H - 40)
+                pick = tk.Frame(top, bg=config.COLOR_BG, highlightthickness=4,
+                                highlightbackground=config.COLOR_SUCCESS,
+                                highlightcolor=config.COLOR_SUCCESS)
+                pick.place(relx=0.5, rely=0.5, anchor="center",
+                           width=440, height=ph)
+                pick.lift()
+                tk.Label(pick, text="Capteurs détectés :", bg=config.COLOR_BG,
+                         fg=config.COLOR_FG, font=config.FONT_MED).pack(pady=8)
+
+                def choose(dev):
+                    pick.destroy()
+                    _add_ble_sensor(dev["mac"])
+
+                for dev in nouveaux:
+                    tk.Button(pick,
+                              text=f"{dev['mac']}   {dev['temp']:.1f}°C",
+                              font=config.FONT_MED, bg=config.COLOR_CARD,
+                              fg=config.COLOR_FG, bd=0, padx=12, pady=8,
+                              command=(lambda d=dev: choose(d))
+                              ).pack(fill="x", padx=16, pady=2)
+                tk.Button(pick, text="Annuler", font=config.FONT_SMALL,
+                          bg=config.COLOR_DANGER, fg="white", bd=0, pady=6,
+                          command=pick.destroy).pack(fill="x", padx=16, pady=(6, 8))
+
+            threading.Thread(target=do, daemon=True).start()
+            top.after(200, poll)
+
+        def add_ble_manual():
+            mac = text_popup(top, "Adresse du capteur BLE (aa:bb:cc:dd:ee:ff)")
+            if mac:
+                _add_ble_sensor(mac)
+
         btn_row = tk.Frame(bottom, bg=config.COLOR_BG)
         btn_row.pack(fill="x")
         tk.Button(btn_row, text="🔍 Tester la lecture",
                   font=config.FONT_MED,
                   bg=config.COLOR_PRIMARY, fg="white", bd=0, padx=12, pady=8,
                   command=read_now).pack(side="left", expand=True, fill="x", padx=(0, 3))
+        tk.Button(btn_row, text="📡 Ajouter BLE",
+                  font=config.FONT_MED,
+                  bg=config.COLOR_CARD, fg="white", bd=0, padx=12, pady=8,
+                  command=add_ble).pack(side="left", expand=True, fill="x", padx=3)
+        tk.Button(btn_row, text="⌨", font=config.FONT_MED,
+                  bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=8,
+                  command=add_ble_manual).pack(side="left", padx=(0, 3))
         tk.Button(btn_row, text="🌐 Ajouter WiFi",
                   font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=12, pady=8,
