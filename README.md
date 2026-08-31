@@ -92,6 +92,9 @@ Garde-fous — une mauvaise version ne doit pas paralyser les magasins :
 - le nouveau code est **chargé en test avant d'être adopté** ; s'il ne démarre
   pas, **retour automatique à la version précédente** (journalisé dans
   `~/traceability/logs/update.log`) ;
+- un commit qui ne touche **que** `devices/*.json` (verrou, réglages, mode de
+  mise à jour) est enregistré sans redémarrer l'application — éditer le fichier
+  de contrôle n'interrompt donc jamais un magasin ;
 - pilotage par appareil dans `devices/<hostname>.json` :
 
 ```json

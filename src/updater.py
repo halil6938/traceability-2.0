@@ -94,9 +94,23 @@ def _rev(ref):
     return r.stdout.strip() if r.returncode == 0 else None
 
 
+def _code_changed(previous, target):
+    """Vrai si le commit touche reellement au code de l'appli.
+    Editer devices/<client>.json (verrou, reglages, mode de mise a jour) cree
+    un commit : il ne doit pas provoquer de redemarrage inutile en magasin."""
+    if not previous:
+        return True
+    r = _git("diff", "--name-only", previous, target)
+    if r.returncode != 0:
+        return True  # dans le doute, on applique la mise a jour
+    files = [f.strip() for f in r.stdout.splitlines() if f.strip()]
+    return any(f == item or f.startswith(item + "/")
+               for f in files for item in SYNC_ITEMS)
+
+
 def check_available():
     """Recupere les nouveautes du depot. Retourne le commit cible si une mise
-    a jour est disponible, sinon None."""
+    a jour du CODE est disponible, sinon None."""
     if repo_ready() is None:
         return None
     try:
@@ -111,7 +125,15 @@ def check_available():
     if not target:
         return None
     deployed = database.get_meta("deployed_commit", "") or _rev("HEAD")
-    return target if target != deployed else None
+    if target == deployed:
+        return None
+    if not _code_changed(deployed, target):
+        # rien a redemarrer : on prend acte du nouveau commit et on s'arrete
+        database.set_meta("deployed_commit", target)
+        logger.info("commit %s sans changement de code : pas de redemarrage",
+                    target[:8])
+        return None
+    return target
 
 
 def _sync_to_app_dir(repo):
