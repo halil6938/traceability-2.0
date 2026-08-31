@@ -3,10 +3,17 @@ import tkinter as tk
 from . import config
 
 
+# Modales actuellement ouvertes : permet de tout refermer si une erreur
+# survient pendant leur construction (sinon le grab reste et l'appli est figee)
+_OPEN_MODALS = []
+
+
 def open_modal(parent, w, h, color=None):
     """Cree un popup modal overrideredirect de facon fiable sur le Pi (X11) :
-    fenetre positionnee et rendue affichable AVANT grab_set (sinon 'grab
-    failed: window not viewable'). Fermer avec close_modal()."""
+    fenetre positionnee, RELEVEE au-dessus de la fenetre plein ecran, et rendue
+    affichable AVANT grab_set (sinon 'grab failed: window not viewable', ou
+    pire : une fenetre invisible qui capte les clics = appli figee).
+    Fermer avec close_modal()."""
     top = tk.Toplevel(parent)
     top.configure(bg=config.COLOR_BG)
     top.overrideredirect(True)
@@ -16,20 +23,40 @@ def open_modal(parent, w, h, color=None):
     top.geometry(f"{w}x{h}+{x}+{y}")
     top.transient(parent)
     top.update_idletasks()
+    try:  # la fenetre racine est -topmost : sans cela le popup passe DESSOUS
+        top.attributes("-topmost", True)
+    except Exception:
+        pass
+    top.lift()
     try:
         top.grab_set()
     except Exception:
         pass
+    top.bind("<Escape>", lambda e: close_modal(top))  # sortie de secours
+    _OPEN_MODALS.append(top)
     return top
 
 
 def close_modal(top):
     """Libere le grab AVANT destroy (sinon l'ecran reste fige sur le Pi)."""
+    if top in _OPEN_MODALS:
+        _OPEN_MODALS.remove(top)
     try:
         top.grab_release()
     except Exception:
         pass
-    top.destroy()
+    try:
+        top.destroy()
+    except Exception:
+        pass
+
+
+def close_all_modals():
+    """Referme toutes les modales ouvertes : filet de securite quand une erreur
+    interrompt la construction d'un popup, qui garderait sinon le focus
+    exclusif et figerait toute l'application."""
+    for top in list(_OPEN_MODALS):
+        close_modal(top)
 
 
 def make_button(master, text, command, bg=None, fg="white", font=None, **kw):

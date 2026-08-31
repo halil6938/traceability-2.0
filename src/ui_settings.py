@@ -4,8 +4,8 @@ import sys
 import threading
 from datetime import date
 from . import config, database, pdf_export
-from .ui_common import (make_button, text_popup, numpad_popup,
-                        info, confirm, error, open_modal, close_modal)
+from .ui_common import (make_button, text_popup, numpad_popup, info, confirm,
+                        error, open_modal, close_modal, close_all_modals)
 
 
 def _pick_device(parent, sensor, devices, on_done):
@@ -59,22 +59,25 @@ class SettingsScreen(tk.Frame):
 
         actions = tk.Frame(self, bg=config.COLOR_BG)
         actions.pack(fill="x", padx=20, pady=4)
-        make_button(actions, "+ Ajouter", self._add,
+        make_button(actions, "+ Ajouter", lambda: self._safe(self._add),
                     bg=config.COLOR_PRIMARY, font=config.FONT_MED
                     ).pack(expand=True, fill="x", padx=3)
 
         actions2 = tk.Frame(self, bg=config.COLOR_BG)
         actions2.pack(fill="x", padx=20, pady=4)
-        make_button(actions2, "📡 Capteurs temp.", self._ble_config,
+        make_button(actions2, "📡 Capteurs temp.",
+                    lambda: self._safe(self._ble_config),
                     bg=config.COLOR_CARD, font=config.FONT_MED
                     ).pack(side="left", expand=True, fill="x", padx=3)
-        make_button(actions2, "📄 Export PDF du mois", self._export_pdf,
+        make_button(actions2, "📄 Export PDF du mois",
+                    lambda: self._safe(self._export_pdf),
                     bg=config.COLOR_SUCCESS, font=config.FONT_MED
                     ).pack(side="right", expand=True, fill="x", padx=3)
 
         actions3 = tk.Frame(self, bg=config.COLOR_BG)
         actions3.pack(fill="x", padx=20, pady=(0, 6))
-        make_button(actions3, "📷 Test camera", self._test_camera,
+        make_button(actions3, "📷 Test camera",
+                    lambda: self._safe(self._test_camera),
                     bg=config.COLOR_CARD, font=config.FONT_MED
                     ).pack(side="left", expand=True, fill="x", padx=3)
         make_button(actions3, "Quitter l'appli", self._quit,
@@ -86,6 +89,19 @@ class SettingsScreen(tk.Frame):
                  ).pack(fill="x", padx=20, pady=(0, 4))
 
         self._render()
+
+    def _safe(self, action):
+        """Lance une action d'ecran en garantissant qu'une erreur ne laisse pas
+        l'appli figee : on referme toute modale a moitie construite (qui
+        garderait le focus exclusif) et on affiche l'erreur."""
+        try:
+            action()
+        except Exception as e:
+            close_all_modals()
+            try:
+                error(self, "Erreur", f"{type(e).__name__} : {e}")
+            except Exception:
+                pass
 
     def _version_line(self):
         """Identite de ce Pi + version du code deployee (support a distance)."""
