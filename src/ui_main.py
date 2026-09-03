@@ -50,6 +50,7 @@ class App(tk.Tk):
         # au redemarrage et hors ligne.
         if _locked_cache:
             self._show_lock_overlay(_msg_cache)
+        self._last_locked = _locked_cache
         self.after(2000, self._lock_tick)
 
         # Mise a jour automatique du code depuis GitHub
@@ -367,6 +368,12 @@ class App(tk.Tk):
                     self._show_lock_overlay(message)
                 else:
                     self._hide_lock_overlay()
+                if locked != self._last_locked:
+                    # confirmer tout de suite que l'ordre a ete recu, sans
+                    # attendre le prochain signe de vie (30 min)
+                    self._last_locked = locked
+                    threading.Thread(target=self._do_heartbeat,
+                                     daemon=True).start()
             self.after(config.REMOTE_POLL_S * 1000, self._lock_tick)
 
         threading.Thread(target=do, daemon=True).start()

@@ -1,8 +1,10 @@
 """Signe de vie Telegram : chaque Pi annonce qu'il est en ligne et sa version.
 
-Deux messages :
+Trois messages :
   - immediat quand la version change (installation, mise a jour) ;
-  - quotidien a partir de HEARTBEAT_HOUR (« en ligne, version ... »).
+  - immediat quand le verrou change : c'est la confirmation que l'ordre de
+    verrouillage donne sur GitHub a bien ete recu par l'appareil ;
+  - quotidien a partir de HEARTBEAT_HOUR (« en ligne » ou « VERROUILLE »).
 
 L'absence du message quotidien signale un Pi hors ligne : c'est a l'exploitant
 de le remarquer, rien ne surveille a sa place.
@@ -62,17 +64,19 @@ def send(text):
 
 
 def _label():
-    """Nom du magasin et version deployee."""
+    """Nom du magasin, version deployee et etat du verrou."""
     from . import remote_lock, updater
     version = (updater.current_version() or "")[:7] or "inconnue"
-    return remote_lock.device_id(), version
+    locked = database.get_meta("remote_locked", "0") == "1"
+    return remote_lock.device_id(), version, locked
 
 
 def tick():
     """A appeler regulierement : envoie ce qui doit l'etre, ou rien."""
     if get_creds() is None:
         return
-    device, version = _label()
+    device, version, locked = _label()
+    etat = "VERROUILLE" if locked else "en ligne"
 
     # 1) La version a change (installation ou mise a jour) : message immediat.
     known = database.get_meta("heartbeat_version", "") or ""
@@ -80,13 +84,24 @@ def tick():
         quoi = "mis a jour" if known else "installe"
         if send(f"{device} — {quoi}, version {version}"):
             database.set_meta("heartbeat_version", version)
+            database.set_meta("heartbeat_locked", "1" if locked else "0")
             database.set_meta("heartbeat_date", date.today().isoformat())
         return
 
-    # 2) Message quotidien, a partir de l'heure convenue.
+    # 2) Le verrou a change : confirmation immediate que l'appareil a bien
+    #    recu l'ordre donne sur GitHub (sinon rien ne le confirmerait).
+    known_lock = database.get_meta("heartbeat_locked", "")
+    if known_lock != ("1" if locked else "0"):
+        quoi = "VERROUILLE" if locked else "deverrouille"
+        if send(f"{device} — {quoi}, version {version}"):
+            database.set_meta("heartbeat_locked", "1" if locked else "0")
+            database.set_meta("heartbeat_date", date.today().isoformat())
+        return
+
+    # 3) Message quotidien, a partir de l'heure convenue.
     today = date.today().isoformat()
     heure = max(0, min(23, config.HEARTBEAT_HOUR))
     if (database.get_meta("heartbeat_date", "") != today
             and datetime.now().hour >= heure):
-        if send(f"{device} — en ligne, version {version}"):
+        if send(f"{device} — {etat}, version {version}"):
             database.set_meta("heartbeat_date", today)

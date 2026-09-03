@@ -115,9 +115,14 @@ normal. **À lancer avant chaque fabrication de carte SD.**
 
 ## Signe de vie Telegram (parc à distance)
 
-Chaque Pi annonce sur Telegram qu'il est en ligne et quelle version il exécute :
-un message **immédiat** à l'installation et à chaque mise à jour, puis un message
-**quotidien** à partir de `HEARTBEAT_HOUR` (8 h par défaut, réglable à distance).
+Chaque Pi annonce sur Telegram son état, sa version et son verrou :
+
+- **immédiat** à l'installation et à chaque mise à jour ;
+- **immédiat quand le verrou change** — c'est la confirmation que l'ordre donné
+  sur GitHub a bien été reçu par l'appareil (quelques dizaines de secondes) ;
+- **quotidien** à partir de `HEARTBEAT_HOUR` (8 h par défaut, réglable à distance) :
+  `boucherie-durand — en ligne, version 0558d3c` ou `— VERROUILLE, …`.
+
 Un Pi qui ne donne plus signe de vie est hors ligne — c'est à l'exploitant de le
 remarquer, rien ne surveille à sa place.
 

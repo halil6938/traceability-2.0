@@ -43,17 +43,41 @@ assert len(envoyes) == 2 and "en ligne" in envoyes[-1]
 heartbeat.tick()
 assert len(envoyes) == 2, "le message quotidien est parti deux fois"
 
-# --- 5. mise a jour : message immediat, sans attendre le lendemain ---
+# --- 5. verrouillage : confirmation immediate ---
+database.set_meta("remote_locked", "1")
+heartbeat.tick()
+print("5. verrouillage a distance   ->", envoyes[-1])
+assert len(envoyes) == 3 and "VERROUILLE" in envoyes[-1]
+heartbeat.tick()
+assert len(envoyes) == 3, "le verrouillage est annonce deux fois"
+
+# --- 6. deverrouillage ---
+database.set_meta("remote_locked", "0")
+heartbeat.tick()
+print("6. deverrouillage            ->", envoyes[-1])
+assert len(envoyes) == 4 and "deverrouille" in envoyes[-1]
+
+# --- 7. message quotidien d'un appareil verrouille ---
+database.set_meta("remote_locked", "1")
+database.set_meta("heartbeat_locked", "1")     # deja annonce
+database.set_meta("heartbeat_date", (date.today() - timedelta(days=1)).isoformat())
+heartbeat.tick()
+print("7. message quotidien, bloque ->", envoyes[-1])
+assert "VERROUILLE" in envoyes[-1], "l'etat du verrou manque dans le message quotidien"
+database.set_meta("remote_locked", "0")
+database.set_meta("heartbeat_locked", "0")
+
+# --- 8. mise a jour : message immediat, sans attendre le lendemain ---
 version["v"] = "bbbbbbb"
 heartbeat.tick()
-print("5. apres une mise a jour     ->", envoyes[-1])
-assert len(envoyes) == 3 and "mis a jour" in envoyes[-1] and "bbbbbbb" in envoyes[-1]
+print("8. apres une mise a jour     ->", envoyes[-1])
+assert "mis a jour" in envoyes[-1] and "bbbbbbb" in envoyes[-1]
 
 # --- 6. echec d'envoi : on reessaiera (rien n'est marque comme envoye) ---
 heartbeat.send = lambda text: False
 version["v"] = "ccccccc"
 heartbeat.tick()
-print("6. envoi en echec            -> version notee :",
+print("9. envoi en echec            -> version notee :",
       database.get_meta("heartbeat_version", ""), "(doit rester bbbbbbb)")
 assert database.get_meta("heartbeat_version") == "bbbbbbb"
 
@@ -66,7 +90,7 @@ avant = len(envoyes)
 heartbeat.tick()
 from datetime import datetime  # noqa: E402
 attendu = avant + (1 if datetime.now().hour >= 23 else 0)
-print("7. avant l'heure du jour     ->", len(envoyes), f"message(s) (attendu {attendu})")
+print("10. avant l'heure du jour    ->", len(envoyes), f"message(s) (attendu {attendu})")
 assert len(envoyes) == attendu
 
 cleanup(sandbox)
