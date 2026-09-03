@@ -63,6 +63,10 @@ UPDATE_QUIET_HOURS = (2, 5)  # heures creuses des mises a jour « auto »
 UPDATE_MAX_PENDING_H = 24    # au-dela, appliquer meme hors heures creuses
                              # (Pi eteint la nuit)
 
+# --- Signe de vie Telegram (voir src/heartbeat.py) ---
+HEARTBEAT_HOUR = 8           # heure du message quotidien « en ligne »
+HEARTBEAT_CHECK_S = 1800     # frequence de verification (30 min)
+
 # Couleurs UI
 COLOR_BG = "#1e293b"
 COLOR_FG = "#f1f5f9"

@@ -76,6 +76,31 @@ traceability/
 2. `cd traceability && bash install.sh`
 3. Redémarrer : l'appli se lance automatiquement.
 
+## Signe de vie Telegram (parc à distance)
+
+Chaque Pi annonce sur Telegram qu'il est en ligne et quelle version il exécute :
+un message **immédiat** à l'installation et à chaque mise à jour, puis un message
+**quotidien** à partir de `HEARTBEAT_HOUR` (8 h par défaut, réglable à distance).
+Un Pi qui ne donne plus signe de vie est hors ligne — c'est à l'exploitant de le
+remarquer, rien ne surveille à sa place.
+
+Configuration, **une seule fois sur le Pi modèle** (les identifiants partent dans
+l'image et sont conservés par `prepare_master.sh`) :
+
+1. Dans Telegram, écrire à **@BotFather** → `/newbot` → il donne un **jeton**.
+2. Écrire un message quelconque à ce nouveau bot (sinon il ne peut pas répondre).
+3. Sur le Pi :
+
+```bash
+python3 ~/traceability-app/tools/set_telegram.py --chat-id <jeton>   # trouve le chat_id
+python3 ~/traceability-app/tools/set_telegram.py <jeton> <chat_id>   # enregistre
+python3 ~/traceability-app/tools/set_telegram.py --test              # message d'essai
+```
+
+Seuls le **nom du magasin** et la **version** sont transmis — aucune donnée client.
+Le jeton étant présent dans l'image, il se retrouve sur chaque Pi installé : en cas
+de fuite, le régénérer via @BotFather suffit à tout invalider.
+
 ## Veille de l'écran
 
 Après `SCREEN_OFF_S` secondes sans contact (600 par défaut, `0` = jamais),

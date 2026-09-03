@@ -5,7 +5,8 @@ import threading
 import time
 from datetime import date, datetime, timedelta
 
-from . import config, database, usb_manager, remote_lock, screen, updater
+from . import (config, database, heartbeat, remote_lock, screen, updater,
+               usb_manager)
 from .camera_scan import CameraScanScreen
 from .ui_temperature import TemperatureScreen
 from .ui_history import HistoryScreen
@@ -53,6 +54,9 @@ class App(tk.Tk):
 
         # Mise a jour automatique du code depuis GitHub
         self.after(60_000, self._update_tick)
+
+        # Signe de vie Telegram (en ligne + version)
+        self.after(20_000, self._heartbeat_tick)
 
         # Veille de l'ecran, geree par l'appli (voir _sleep)
         self._sleep_overlay = None
@@ -197,6 +201,19 @@ class App(tk.Tk):
         try:
             from . import purge
             purge.purge_old_photos()
+        except Exception:
+            pass
+
+    # --- Signe de vie ---
+
+    def _heartbeat_tick(self):
+        """Envoi en tache de fond : le reseau ne doit jamais figer l'ecran."""
+        threading.Thread(target=self._do_heartbeat, daemon=True).start()
+        self.after(config.HEARTBEAT_CHECK_S * 1000, self._heartbeat_tick)
+
+    def _do_heartbeat(self):
+        try:
+            heartbeat.tick()
         except Exception:
             pass
 

@@ -14,8 +14,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from src import config, database  # noqa: E402
 
-# Reglages communs a tous les clients, a conserver
-KEEP_META = ("tuya_access_id", "tuya_access_secret", "tuya_region")
+# Reglages communs a tous les clients, a conserver dans l'image modele
+# (cles cloud Tuya et signe de vie Telegram : ils sont a vous, pas au client).
+# heartbeat_version / heartbeat_date ne sont PAS conserves : chaque nouveau Pi
+# doit annoncer son installation.
+KEEP_META = ("tuya_access_id", "tuya_access_secret", "tuya_region",
+             "telegram_token", "telegram_chat_id")
 
 
 def main():

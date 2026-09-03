@@ -246,6 +246,10 @@ def build(path):
         Paragraph("Le code se met a jour tout seul depuis GitHub : rien a "
                   "transferer sur les Pi apres une correction.", S_BODY),
         Spacer(1, 3),
+        Paragraph("Signe de vie Telegram : chaque Pi annonce son installation, "
+                  "ses mises a jour, et envoie un message quotidien. Un Pi "
+                  "silencieux est hors ligne.", S_BODY),
+        Spacer(1, 3),
         Paragraph("L'ecran se met en veille apres 10 minutes sans contact. Le "
                   "premier contact rallume seulement : il ne declenche aucun "
                   "bouton. Delai reglable a distance (SCREEN_OFF_S).", S_BODY),
