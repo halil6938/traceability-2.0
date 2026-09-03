@@ -97,6 +97,23 @@ pour essayer une modification sans toucher à un Pi en production.
 
 Prérequis (une seule fois) : `pip install opencv-python-headless pillow reportlab bleak tinytuya`
 
+## Tests automatiques
+
+```bash
+python tests/run_all.py
+```
+
+11 tests qui pilotent réellement l'application (interface comprise) et vérifient
+les points qui ont posé problème en production : dialogues enchaînés qui figeaient
+l'appli, contact sur écran en veille qui ne doit déclencher aucun bouton, une seule
+photo par ticket, recadrage sur l'étiquette, calibration du focus, mise à jour
+annulée si le code ne démarre pas, signe de vie, effacement des données client,
+rattrapage d'une réception.
+
+Chaque test s'exécute isolé (dossier temporaire, aucun réseau) : ni la config d'un
+Pi ni celle du PC ne sont touchées. Certains ouvrent brièvement une fenêtre, c'est
+normal. **À lancer avant chaque fabrication de carte SD.**
+
 ## Signe de vie Telegram (parc à distance)
 
 Chaque Pi annonce sur Telegram qu'il est en ligne et quelle version il exécute :
