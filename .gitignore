@@ -33,3 +33,6 @@ Thumbs.db
 # Log de test cree a la racine
 remote.log
 tuya.log
+
+# Donnees d'essai sur PC (tools/run_pc.py)
+_local/

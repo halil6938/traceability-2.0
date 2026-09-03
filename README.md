@@ -79,6 +79,24 @@ traceability/
 2. `cd traceability && bash install.sh`
 3. Redémarrer : l'appli se lance automatiquement.
 
+## Essayer l'application sur un PC
+
+```bash
+python tools/run_pc.py
+```
+
+Ouvre l'appli dans une fenêtre 800×480 (la taille de l'écran du Pi). Pratique
+pour essayer une modification sans toucher à un Pi en production.
+
+- Données isolées dans `_local/` : aucune configuration réelle n'est touchée.
+- **Contrôle à distance, mise à jour automatique et signe de vie désactivés** —
+  un essai sur PC ne peut ni verrouiller ni mettre à jour quoi que ce soit.
+- La caméra utilise la webcam du PC : l'autofocus et la calibration ne sont pas
+  représentatifs du module du Pi.
+- `Échap` bascule le plein écran. Pour repartir de zéro : supprimer `_local/`.
+
+Prérequis (une seule fois) : `pip install opencv-python-headless pillow reportlab bleak tinytuya`
+
 ## Signe de vie Telegram (parc à distance)
 
 Chaque Pi annonce sur Telegram qu'il est en ligne et quelle version il exécute :
