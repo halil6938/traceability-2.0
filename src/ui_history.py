@@ -1,9 +1,14 @@
 """Ecran historique : Tickets (photos), Temperatures ou Receptions."""
 import tkinter as tk
-from datetime import date, datetime
+from datetime import date, datetime, time
 from calendar import monthrange
 from . import config, database, pdf_export
-from .ui_common import numpad_popup, info, error, confirm
+from .ui_common import (numpad_popup, info, error, confirm,
+                        open_modal, close_modal)
+
+# Heure attribuee a une reception saisie a posteriori : l'heure exacte
+# n'est pas connue, et seule la date compte pour ce releve.
+RECEPTION_DEFAULT_TIME = time(9, 0)
 
 MONTHS = ["Janvier", "Fevrier", "Mars", "Avril", "Mai", "Juin",
           "Juillet", "Aout", "Septembre", "Octobre", "Novembre", "Decembre"]
@@ -441,6 +446,9 @@ class ReceptionHistoryScreen(tk.Frame):
         tk.Button(header, text="Export PDF", font=config.FONT_MED,
                   bg=config.COLOR_SUCCESS, fg="white", bd=0, padx=10, pady=4,
                   command=self._export).pack(side="right", padx=4)
+        tk.Button(header, text="+ Ajouter", font=config.FONT_MED,
+                  bg=config.COLOR_PRIMARY, fg="white", bd=0, padx=10, pady=4,
+                  command=self._add).pack(side="right", padx=4)
 
         nav = tk.Frame(self, bg=config.COLOR_BG)
         nav.pack(fill="x", padx=10)
@@ -503,12 +511,112 @@ class ReceptionHistoryScreen(tk.Frame):
             tk.Label(row, text=dt.strftime("%d/%m  %H:%M"), bg=config.COLOR_CARD,
                      fg=config.COLOR_MUTED, font=config.FONT_MED, width=12,
                      anchor="w").pack(side="left", padx=8, pady=6)
-            tk.Label(row, text=r["supplier_name"], bg=config.COLOR_CARD,
-                     fg=config.COLOR_FG, font=config.FONT_MED, anchor="w"
-                     ).pack(side="left", padx=4, expand=True, fill="x")
+            tk.Button(row, text="Suppr", font=config.FONT_SMALL,
+                      bg=config.COLOR_DANGER, fg="white", bd=0, padx=8, pady=4,
+                      command=lambda x=r: self._delete(x)
+                      ).pack(side="right", padx=(0, 8), pady=4)
+            tk.Button(row, text="Modifier", font=config.FONT_SMALL,
+                      bg=config.COLOR_PRIMARY, fg="white", bd=0, padx=8, pady=4,
+                      command=lambda x=r: self._edit(x)
+                      ).pack(side="right", padx=4, pady=4)
             tk.Label(row, text=f"{r['temperature']:.1f}°C", bg=config.COLOR_CARD,
                      fg=config.COLOR_SUCCESS, font=config.FONT_MED
                      ).pack(side="right", padx=12)
+            tk.Label(row, text=r["supplier_name"], bg=config.COLOR_CARD,
+                     fg=config.COLOR_FG, font=config.FONT_MED, anchor="w"
+                     ).pack(side="left", padx=4, expand=True, fill="x")
+
+    # --- rattrapage d'une reception oubliee ---
+
+    def _panel(self, titre, w, h):
+        panel = open_modal(self, w, h, config.COLOR_PRIMARY)
+        tk.Label(panel, text=titre, bg=config.COLOR_BG, fg=config.COLOR_FG,
+                 font=config.FONT_MED).pack(pady=8)
+        return panel
+
+    def _add(self):
+        """Saisie a posteriori : fournisseur, puis jour, puis temperature."""
+        suppliers = database.list_suppliers()
+        if not suppliers:
+            error(self, "Aucun fournisseur",
+                  "Ajoutez d'abord un fournisseur depuis\n"
+                  "Réception ▸ Fournisseurs.")
+            return
+        h = min(80 + len(suppliers) * 52 + 50, config.SCREEN_H - 30)
+        panel = self._panel("Quel fournisseur ?", 420, h)
+        for s in suppliers:
+            tk.Button(panel, text=s["name"], font=config.FONT_MED,
+                      bg=config.COLOR_CARD, fg=config.COLOR_FG, bd=0,
+                      padx=12, pady=8,
+                      command=(lambda x=s: (close_modal(panel),
+                                            self._pick_day(x)))
+                      ).pack(fill="x", padx=16, pady=2)
+        tk.Button(panel, text="Annuler", font=config.FONT_SMALL,
+                  bg=config.COLOR_DANGER, fg="white", bd=0, pady=6,
+                  command=lambda: close_modal(panel)
+                  ).pack(fill="x", padx=16, pady=(6, 8))
+
+    def _pick_day(self, supplier):
+        """Jours du mois affiche ; les jours a venir sont inactifs."""
+        last = monthrange(self.year, self.month)[1]
+        today = date.today()
+        panel = self._panel(f"{supplier['name']} — quel jour ?", 440, 330)
+        grid = tk.Frame(panel, bg=config.COLOR_BG)
+        grid.pack(padx=10, pady=2)
+        for col in range(7):
+            grid.columnconfigure(col, weight=1)
+        for day in range(1, last + 1):
+            jour = date(self.year, self.month, day)
+            btn = tk.Button(grid, text=str(day), font=config.FONT_MED,
+                            bg=config.COLOR_CARD, fg=config.COLOR_FG, bd=0,
+                            width=3, pady=6,
+                            command=(lambda d=jour: (close_modal(panel),
+                                                     self._ask_temp(supplier, d))))
+            if jour > today:
+                btn.config(state="disabled", fg=config.COLOR_MUTED)
+            btn.grid(row=(day - 1) // 7, column=(day - 1) % 7, padx=2, pady=2)
+        tk.Button(panel, text="Annuler", font=config.FONT_SMALL,
+                  bg=config.COLOR_DANGER, fg="white", bd=0, pady=6,
+                  command=lambda: close_modal(panel)
+                  ).pack(fill="x", padx=16, pady=(8, 8))
+
+    def _ask_temp(self, supplier, jour):
+        v = numpad_popup(
+            self, f"{supplier['name']} — {jour.strftime('%d/%m/%Y')} (°C)")
+        if v in (None, "", "-"):
+            return
+        try:
+            temp = float(v)
+        except ValueError:
+            error(self, "Erreur", "Température invalide.")
+            return
+        database.save_reception(
+            supplier["id"], temp,
+            datetime.combine(jour, RECEPTION_DEFAULT_TIME))
+        self._render()
+
+    def _edit(self, r):
+        dt = datetime.fromisoformat(r["created_at"])
+        v = numpad_popup(self,
+                         f"{r['supplier_name']} — {dt.strftime('%d/%m/%Y')} (°C)",
+                         initial=f"{r['temperature']:g}")
+        if v in (None, "", "-"):
+            return
+        try:
+            temp = float(v)
+        except ValueError:
+            error(self, "Erreur", "Température invalide.")
+            return
+        database.update_reception(r["id"], temp)
+        self._render()
+
+    def _delete(self, r):
+        dt = datetime.fromisoformat(r["created_at"])
+        if confirm(self, "Supprimer",
+                   f"Supprimer le relevé {r['supplier_name']} du "
+                   f"{dt.strftime('%d/%m/%Y')} ({r['temperature']:.1f}°C) ?"):
+            database.delete_reception(r["id"])
+            self._render()
 
     def _export(self):
         try:

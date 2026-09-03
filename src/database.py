@@ -240,13 +240,21 @@ def delete_supplier(supplier_id: int):
 
 # ---------- Receptions ----------
 
-def save_reception(supplier_id: int, temperature: float):
-    """Enregistre un releve de reception (plusieurs possibles par jour)."""
+def save_reception(supplier_id: int, temperature: float, when=None):
+    """Enregistre un releve de reception (plusieurs possibles par jour).
+    when : datetime, pour rattraper une reception oubliee ; maintenant sinon."""
     with connect() as c:
         c.execute(
             "INSERT INTO receptions(supplier_id, temperature, created_at) VALUES (?,?,?)",
-            (supplier_id, temperature, datetime.now().isoformat()),
+            (supplier_id, temperature, (when or datetime.now()).isoformat()),
         )
+
+
+def update_reception(reception_id: int, temperature: float):
+    """Corrige la temperature d'un releve existant."""
+    with connect() as c:
+        c.execute("UPDATE receptions SET temperature=? WHERE id=?",
+                  (temperature, reception_id))
 
 
 def delete_reception(reception_id: int):
