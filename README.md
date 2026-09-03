@@ -81,12 +81,11 @@ traceability/
 
 ## Essayer l'application sur un PC
 
-```bash
-python tools/run_pc.py
-```
+Double-cliquer sur **`Essayer sur ce PC.bat`** (ou `python tools/run_pc.py`).
 
 Ouvre l'appli dans une fenêtre 800×480 (la taille de l'écran du Pi). Pratique
-pour essayer une modification sans toucher à un Pi en production.
+pour essayer une modification **avant** de la pousser : les Pi suivent `master`,
+donc tout ce qui est poussé finit déployé.
 
 - Données isolées dans `_local/` : aucune configuration réelle n'est touchée.
 - **Contrôle à distance, mise à jour automatique et signe de vie désactivés** —
