@@ -84,8 +84,9 @@ cat <<EOF
  A FAIRE MAINTENANT
    1. Redemarrer (indispensable pour la camera) :
           sudo reboot
-   2. Verifier l'orientation de l'ecran ; si elle est mauvaise :
+   2. Orientation de l'ecran (montage habituel : 180 degres) :
           Menu > Preferences > Screen Configuration
+          clic droit sur l'ecran > Orientation > Inverted, puis Appliquer
    3. Verifier la camera : Parametres > Test camera
    4. Calibrer le focus une fois la camera a sa place definitive
    5. Signe de vie Telegram (une fois par machine) :
