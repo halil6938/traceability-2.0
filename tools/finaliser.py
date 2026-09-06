@@ -4,6 +4,7 @@
     python3 tools/finaliser.py --exemple        # cree un modele de fichier
     python3 tools/finaliser.py --fichier CHEMIN
     python3 tools/finaliser.py --etat           # ce qui est deja configure
+    python3 tools/finaliser.py --exporter       # ecrit le fichier depuis CE Pi
 
 Utile apres une installation depuis GitHub, ou les identifiants ne sont pas
 herites d'une image : jeton Telegram et cles Tuya sont les memes sur toutes
@@ -98,6 +99,30 @@ def main(args):
 
     if "--etat" in args:
         return etat()
+
+    if "--exporter" in args:
+        # Recuperer les identifiants d'une machine deja configuree pour les
+        # reporter sur les suivantes, sans avoir a les retrouver ailleurs.
+        i = args.index("--exporter")
+        cible = Path(args[i + 1]) if i + 1 < len(args) else Path.cwd() / NOM_FICHIER
+        if cible.exists():
+            print(f"{cible} existe deja, rien n'a ete ecrit.")
+            return 1
+        valeurs = {c: (database.get_meta(c, "") or "") for c in CHAMPS}
+        if not any(valeurs.values()):
+            print("Cette machine n'a aucun identifiant enregistre.")
+            return 1
+        lignes = ["# Identifiants exportes depuis " + __import__("socket").gethostname(),
+                  "# CONTIENT DES SECRETS EN CLAIR : garder sur cle USB,",
+                  "# ne jamais laisser chez un client.", ""]
+        lignes += [f"{c:<18} = {valeurs[c]}" for c in CHAMPS]
+        cible.write_text("\n".join(lignes) + "\n", encoding="utf-8")
+        print(f"Fichier ecrit : {cible}")
+        for cle, valeur in valeurs.items():
+            print(f"  {cle:<20} {masquer(cle, valeur) if valeur else '— vide'}")
+        print("\nCopie-le sur ta cle USB, puis efface-le de cette machine :")
+        print(f"    rm {cible}")
+        return 0
 
     if "--exemple" in args:
         cible = Path.cwd() / NOM_FICHIER

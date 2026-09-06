@@ -86,10 +86,15 @@ seul le nom d'hôte diffère. Après une installation depuis GitHub (où rien
 n'est hérité d'une image), une seule commande les applique :
 
 ```bash
-python3 tools/finaliser.py --exemple   # crée un modèle identifiants.txt
+python3 tools/finaliser.py --exporter  # écrit le fichier depuis un Pi déjà configuré
 python3 tools/finaliser.py             # le cherche sur la clé USB et l'applique
-python3 tools/finaliser.py --etat      # ce qui est déjà configuré
+python3 tools/finaliser.py --etat      # ce qui est déjà configuré (secrets masqués)
+python3 tools/finaliser.py --exemple   # crée un modèle vierge
 ```
+
+`--exporter` est le plus simple pour constituer la clé : il récupère les
+identifiants d'une machine qui fonctionne, sans avoir à les retrouver chez
+BotFather ou sur iot.tuya.com.
 
 Le fichier `identifiants.txt` reste sur la clé USB : il n'est jamais copié sur
 le Pi, et il est exclu du dépôt. **Garde cette clé, ne la laisse pas chez un
