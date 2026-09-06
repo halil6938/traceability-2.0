@@ -92,7 +92,20 @@ def etat():
     return 0
 
 
+OPTIONS = ("--etat", "--exemple", "--exporter", "--fichier")
+
+
 def main(args):
+    # Une option inconnue (ancienne version du script, faute de frappe) ne
+    # doit pas passer inapercue et declencher autre chose.
+    inconnues = [a for a in args if a.startswith("--") and a not in OPTIONS]
+    if inconnues:
+        print("Option inconnue : " + ", ".join(inconnues))
+        print("Options possibles : " + "  ".join(OPTIONS))
+        print("Sans option : cherche identifiants.txt sur la cle USB "
+              "et l'applique.")
+        return 1
+
     # Le script peut tourner avant le premier demarrage de l'application :
     # la base n'existe alors pas encore.
     database.init_db()
