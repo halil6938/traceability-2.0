@@ -96,12 +96,16 @@ def code(*lines):
                         ("BOTTOMPADDING", (0, 0), (-1, -1), 5)])
 
 
+# Fond assorti a la barre de gauche de chaque encadre
+FONDS = {WARNING: "#fef3c7", DANGER: "#fee2e2", SUCCESS: "#dcfce7"}
+
+
 def callout(text, color=WARNING, label="ATTENTION"):
     t = Table([[Paragraph(f"<b>{label}</b> &nbsp; {text}", S_NOTE)]],
               colWidths=[170 * mm])
     t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fef3c7")
-         if color is WARNING else colors.HexColor("#fee2e2")),
+        ("BACKGROUND", (0, 0), (-1, -1),
+         colors.HexColor(FONDS.get(color, "#fef3c7"))),
         ("LINEBEFORE", (0, 0), (0, -1), 3, color),
         ("LEFTPADDING", (0, 0), (-1, -1), 8),
         ("TOPPADDING", (0, 0), (-1, -1), 5),
@@ -124,60 +128,87 @@ def build(path):
         f"mise a jour du {date.today().strftime('%d/%m/%Y')}", S_SUB))
 
     # ---- Phase 0
-    st.append(phase(0, "Fabriquer l'image modele (une seule fois)"))
+    st.append(phase(0, "La cle USB d'identifiants (une seule fois)"))
     st.append(Spacer(1, 4))
     st.append(steps([
-        "Sur le Pi de reference, tout verifier une derniere fois "
-        "(scan, releves, reception, camera).",
-        "Effacer les donnees du client et les identifiants de la machine :"]))
-    st.append(code("bash ~/traceability-app/tools/prepare_master.sh",
-                   "sudo poweroff"))
+        "Sur un Pi deja installe, creer le modele :"]))
+    st.append(code("python3 ~/traceability-app/tools/finaliser.py --exemple"))
     st.append(steps([
-        "Sortir la carte SD, la lire sur le PC avec Raspberry Pi Imager "
-        "(bouton <b>Lire</b>) pour obtenir un fichier .img.",
-        "Conserver ce .img : c'est le modele, reutilisable pour tous les clients."]))
+        "Renseigner le jeton Telegram, le chat_id et, si besoin, les cles "
+        "Tuya. Ces identifiants sont les MEMES sur toutes les machines.",
+        "Copier le fichier <b>identifiants.txt</b> sur une cle USB. Elle "
+        "servira a toutes les installations suivantes."]))
     st.append(Spacer(1, 5))
-    st.append(callout("Eteindre le Pi apres le script, ne pas le redemarrer : "
-                      "il n'a plus de WiFi ni de configuration."))
+    st.append(callout(
+        "Cette cle donne le controle du bot Telegram et l'acces au compte "
+        "capteurs Tuya. La garder a l'atelier : ne jamais l'oublier chez un "
+        "client.", DANGER, "A PROTEGER"))
     st.append(Spacer(1, 9))
 
     # ---- Phase 1
-    st.append(phase(1, "Preparer la carte SD du client (~10 min)"))
+    st.append(phase(1, "Preparer la carte SD (~10 min)"))
     st.append(Spacer(1, 4))
     st.append(steps([
-        "Raspberry Pi Imager : <b>Choisir l'OS</b> puis <i>Utiliser une image "
-        "personnalisee</i>, selectionner le .img.",
-        "Choisir la carte SD, cliquer <b>Suivant</b> puis "
-        "<b>Modifier les reglages</b>.",
-        "<b>Nom d'hote</b> = nom du client, en minuscules avec tirets "
-        "(exemple : boucherie-durand). C'est l'identifiant du Pi pour le "
-        "verrouillage et les mises a jour a distance.",
-        "<b>WiFi</b> du magasin (reseau 2,4 GHz uniquement).",
+        "Carte de <b>16 Go minimum</b> (une installation complete occupe "
+        "7,5 Go). Acheter les cartes par lot identique.",
+        "Raspberry Pi Imager : <b>Raspberry Pi OS avec bureau</b> "
+        "(version proposee par defaut).",
+        "<b>Modifier les reglages</b> avant d'ecrire :",
+        "&nbsp;&nbsp;&bull; <b>Nom d'hote</b> = nom du client, en minuscules "
+        "avec tirets (exemple : boucherie-durand)",
+        "&nbsp;&nbsp;&bull; <b>WiFi</b> du magasin (reseau 2,4 GHz uniquement)",
+        "&nbsp;&nbsp;&bull; <b>Nom d'utilisateur</b> : libre, le script s'adapte",
         "Ecrire l'image sur la carte."]))
     st.append(Spacer(1, 5))
     st.append(callout(
-        "Laisser DECOCHEE la case &laquo; nom d'utilisateur et mot de passe &raquo;. "
-        "Le compte stpriest doit rester intact : un autre nom empeche "
-        "l'application de demarrer.", DANGER, "A NE PAS FAIRE"))
+        "Le nom d'hote est l'identifiant du Pi pour le verrouillage et les "
+        "mises a jour a distance. Il doit etre unique et facile a reconnaitre."))
     st.append(Spacer(1, 9))
 
     # ---- Phase 2
-    st.append(phase(2, "Montage sur place"))
+    st.append(phase(2, "Installer l'application (~45 min sans surveillance)"))
     st.append(Spacer(1, 4))
     st.append(steps([
-        "Carte SD dans le Pi, ecran, camera (nappe CSI), <b>cle USB</b> "
-        "(photos et exports PDF), alimentation.",
-        "Fixer la camera a sa position definitive avant de calibrer (phase 3d).",
-        "L'application demarre seule. Verifier le nom de la machine :"]))
+        "Carte dans le Pi, ecran, alimentation. Demarrer et ouvrir un terminal.",
+        "Lancer l'installation :"]))
+    st.append(code("git clone https://github.com/halil6938/traceability-2.0.git",
+                   "cd traceability-2.0",
+                   "bash install.sh",
+                   "sudo reboot"))
+    st.append(steps([
+        "Le script installe les paquets, les reglages camera "
+        "(dtoverlay=ov5647,vcm) et le demarrage automatique. Le redemarrage "
+        "est indispensable : sans lui, l'autofocus ne fonctionne pas."]))
+    st.append(Spacer(1, 5))
+    st.append(callout(
+        "Plusieurs Pi peuvent etre installes EN MEME TEMPS : lancer la "
+        "commande sur chacun, puis les laisser travailler en parallele. "
+        "C'est le principal gain face au clonage de carte, qui monopolise "
+        "le PC carte apres carte.", SUCCESS, "GAIN DE TEMPS"))
+    st.append(Spacer(1, 9))
+
+    # ---- Phase 3
+    st.append(phase(3, "Finaliser la machine (~5 min)"))
+    st.append(Spacer(1, 4))
+    st.append(steps([
+        "Brancher la cle USB d'identifiants, puis :"]))
+    st.append(code("python3 ~/traceability-app/tools/finaliser.py"))
+    st.append(steps([
+        "Jeton Telegram et cles Tuya sont appliques en une fois. Verifier "
+        "avec <b>--etat</b> ; un message Telegram confirme l'installation.",
+        "<b>Orientation de l'ecran</b> : Menu &gt; Preferences &gt; Screen "
+        "Configuration, clic droit sur l'ecran &gt; Orientation &gt; "
+        "<b>Inverted</b> (180 degres), puis Appliquer.",
+        "Verifier le nom de la machine :"]))
     st.append(code("hostname"))
     st.append(steps([
-        "Si le nom est incorrect, le corriger puis redemarrer :"]))
+        "S'il est incorrect :"]))
     st.append(code("bash ~/traceability-app/tools/set_client.sh boucherie-durand",
                    "sudo reboot"))
     st.append(Spacer(1, 9))
 
     # ---- Phase 3
-    st.append(phase(3, "Configuration dans l'application (~15 min)"))
+    st.append(phase(4, "Configuration dans l'application (~15 min)"))
     st.append(Spacer(1, 4))
     st.append(Paragraph("<b>a) Les appareils</b> (frigos et congelateurs)", S_BODY))
     st.append(steps([
@@ -216,7 +247,7 @@ def build(path):
     st.append(Spacer(1, 9))
 
     # ---- Phase 4
-    st.append(phase(4, "Enregistrer le client pour le controle a distance"))
+    st.append(phase(5, "Enregistrer le client pour le controle a distance"))
     st.append(Spacer(1, 4))
     st.append(steps([
         "Sur GitHub, dossier <b>devices/</b>, creer le fichier "
@@ -238,7 +269,8 @@ def build(path):
         Paragraph("Version installee et nom du Pi : en bas de l'ecran "
                   "<b>Parametres</b>.", S_BODY),
         Spacer(1, 3),
-        code("sudo systemctl restart traceability     # redemarrer l'application",
+        code("python3 ~/traceability-app/tools/finaliser.py --etat  # identifiants",
+             "sudo systemctl restart traceability     # redemarrer l'application",
              "journalctl -u traceability -n 40        # journal de l'application",
              "cat ~/traceability/logs/update.log      # mises a jour",
              "cat ~/traceability/logs/ble_thermo.log  # pistolet infrarouge",
