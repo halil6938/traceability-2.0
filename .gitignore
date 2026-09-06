@@ -36,3 +36,9 @@ tuya.log
 
 # Donnees d'essai sur PC (tools/run_pc.py)
 _local/
+
+# Identifiants communs (jeton Telegram, cles Tuya) : JAMAIS sur GitHub
+identifiants.txt
+
+# Images de cartes SD (plusieurs Go) : jamais dans le depot
+*.img

@@ -79,6 +79,23 @@ traceability/
 2. `cd traceability && bash install.sh`
 3. Redémarrer : l'appli se lance automatiquement.
 
+## Identifiants communs à plusieurs Pi
+
+Le jeton Telegram et les clés Tuya sont les mêmes sur toutes tes machines ;
+seul le nom d'hôte diffère. Après une installation depuis GitHub (où rien
+n'est hérité d'une image), une seule commande les applique :
+
+```bash
+python3 tools/finaliser.py --exemple   # crée un modèle identifiants.txt
+python3 tools/finaliser.py             # le cherche sur la clé USB et l'applique
+python3 tools/finaliser.py --etat      # ce qui est déjà configuré
+```
+
+Le fichier `identifiants.txt` reste sur la clé USB : il n'est jamais copié sur
+le Pi, et il est exclu du dépôt. **Garde cette clé, ne la laisse pas chez un
+client** — le jeton permet de piloter le bot, les clés Tuya donnent accès au
+compte capteurs.
+
 ## Essayer l'application sur un PC
 
 Double-cliquer sur **`Essayer sur ce PC.bat`** (ou `python tools/run_pc.py`).

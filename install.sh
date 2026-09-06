@@ -89,9 +89,10 @@ cat <<EOF
           clic droit sur l'ecran > Orientation > Inverted, puis Appliquer
    3. Verifier la camera : Parametres > Test camera
    4. Calibrer le focus une fois la camera a sa place definitive
-   5. Signe de vie Telegram (une fois par machine) :
-          python3 $APP_DIR/tools/set_telegram.py <jeton> <chat_id>
-   6. Cles Tuya si capteur WiFi : Parametres > Capteurs temp. > Cles
+   5. Identifiants communs (jeton Telegram, cles Tuya) — branche la cle USB
+      qui contient identifiants.txt, puis :
+          python3 $APP_DIR/tools/finaliser.py
+      (a defaut, un par un : tools/set_telegram.py et Parametres > Cles)
 
  Nom de la machine : $(hostname)
    il sert d'identifiant pour le verrouillage et les mises a jour ;
