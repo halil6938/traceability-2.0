@@ -9,6 +9,10 @@ Application de traçabilité pour Raspberry Pi 3 (écran tactile 5" 800×480, **
   Une réception oubliée se rattrape depuis **Historique ▸ Réceptions ▸ + Ajouter**
   (fournisseur, jour du mois affiché, température) ; chaque ligne est aussi
   modifiable et supprimable. Les jours à venir ne sont pas sélectionnables.
+- ⏱ **Retour auto au menu** après inactivité, sur Scan ticket, Historique et
+  Paramètres — pour ces deux derniers, suspendu tant qu'une fenêtre (numpad,
+  confirmation) est ouverte. Délais réglables à distance (`HISTORY_INACTIVITY_S`,
+  `SETTINGS_INACTIVITY_S`).
 - 📄 **Export PDF** par mois sur clé USB (températures + réceptions).
 - 🗑 **Purge auto** des photos > 6 mois.
 - 🔒 **Contrôle à distance** : verrou + réglages via `remote_control.json` (voir plus bas).

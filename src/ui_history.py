@@ -4,7 +4,8 @@ from datetime import date, datetime, time
 from calendar import monthrange
 from . import config, database, pdf_export
 from .ui_common import (numpad_popup, info, error, confirm,
-                        open_modal, close_modal)
+                        open_modal, close_modal, bind_drag_scroll,
+                        schedule_auto_return as auto_return)
 
 # Heure attribuee a une reception saisie a posteriori : l'heure exacte
 # n'est pas connue, et seule la date compte pour ce releve.
@@ -24,6 +25,7 @@ class HistoryScreen(tk.Frame):
     def __init__(self, master, on_done):
         super().__init__(master, bg=config.COLOR_BG)
         self.on_done = on_done
+        auto_return(self, config.HISTORY_INACTIVITY_S, self._back)
         self.pack(fill="both", expand=True)
 
         header = tk.Frame(self, bg=config.COLOR_BG)
@@ -97,6 +99,7 @@ class PhotoHistoryScreen(tk.Frame):
     def __init__(self, master, on_done):
         super().__init__(master, bg="black")
         self.on_done = on_done
+        auto_return(self, config.HISTORY_INACTIVITY_S, self._back)
         self.pack(fill="both", expand=True)
 
         today = date.today()
@@ -278,6 +281,7 @@ class TemperatureHistoryScreen(tk.Frame):
     def __init__(self, master, on_done):
         super().__init__(master, bg=config.COLOR_BG)
         self.on_done = on_done
+        auto_return(self, config.HISTORY_INACTIVITY_S, self._back)
         self.pack(fill="both", expand=True)
 
         today = date.today()
@@ -373,6 +377,8 @@ class TemperatureHistoryScreen(tk.Frame):
                 entry = idx.get((d["id"], day.isoformat()))
                 self._cell(row, d, day, entry)
 
+        bind_drag_scroll(self.canvas, self.table_frame)
+
     def _cell(self, parent, device, day, entry):
         if entry is None:
             text, bg, fg = "—", config.COLOR_CARD, config.COLOR_MUTED
@@ -429,6 +435,7 @@ class ReceptionHistoryScreen(tk.Frame):
     def __init__(self, master, on_done):
         super().__init__(master, bg=config.COLOR_BG)
         self.on_done = on_done
+        auto_return(self, config.HISTORY_INACTIVITY_S, self._back)
         self.pack(fill="both", expand=True)
 
         today = date.today()
@@ -471,6 +478,7 @@ class ReceptionHistoryScreen(tk.Frame):
         canvas.configure(yscrollcommand=sb.set)
         canvas.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
+        self.canvas = canvas
 
         self._render()
 
@@ -525,6 +533,8 @@ class ReceptionHistoryScreen(tk.Frame):
             tk.Label(row, text=r["supplier_name"], bg=config.COLOR_CARD,
                      fg=config.COLOR_FG, font=config.FONT_MED, anchor="w"
                      ).pack(side="left", padx=4, expand=True, fill="x")
+
+        bind_drag_scroll(self.canvas, self.list_frame)
 
     # --- rattrapage d'une reception oubliee ---
 

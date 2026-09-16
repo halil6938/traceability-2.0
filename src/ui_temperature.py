@@ -3,7 +3,7 @@ import tkinter as tk
 import threading
 from datetime import date
 from . import config, database
-from .ui_common import numpad_popup
+from .ui_common import numpad_popup, bind_drag_scroll
 
 
 class TemperatureScreen(tk.Frame):
@@ -57,6 +57,7 @@ class TemperatureScreen(tk.Frame):
         canvas.configure(yscrollcommand=sb.set)
         canvas.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
+        self.canvas = canvas
 
         self.rows = {}
         self._ble_cancel = threading.Event()
@@ -72,6 +73,7 @@ class TemperatureScreen(tk.Frame):
         for d in database.list_devices():
             reading = database.get_reading(d["id"], self.today)
             self._make_row(d, reading)
+        bind_drag_scroll(self.canvas, self.rows_frame)
 
     def _make_row(self, device, reading):
         row = tk.Frame(self.rows_frame, bg=config.COLOR_CARD)

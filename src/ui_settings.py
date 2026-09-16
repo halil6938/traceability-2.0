@@ -6,7 +6,7 @@ import threading
 from datetime import date
 from . import config, database, pdf_export
 from .ui_common import (make_button, text_popup, numpad_popup, info, confirm,
-                        error, close_all_modals)
+                        error, close_all_modals, schedule_auto_return as auto_return)
 
 logger = logging.getLogger(__name__)
 if not logger.handlers:
@@ -55,6 +55,7 @@ class SettingsScreen(tk.Frame):
     def __init__(self, master, on_done):
         super().__init__(master, bg=config.COLOR_BG)
         self.on_done = on_done
+        auto_return(self, config.SETTINGS_INACTIVITY_S, self._back)
         self.pack(fill="both", expand=True)
 
         header = tk.Frame(self, bg=config.COLOR_BG)

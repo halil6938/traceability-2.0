@@ -20,6 +20,63 @@ from . import config
 _OPEN_MODALS = []
 
 
+def bind_drag_scroll(canvas, container=None):
+    """Permet de faire defiler `canvas` en glissant le doigt n'importe ou sur
+    son contenu, pas seulement sur la barre laterale (trop etroite au doigt).
+    Le glissement suit exactement le doigt (pas de scroll par a-coups).
+
+    Parcourt `container` (par defaut canvas lui-meme) et se pose sur chaque
+    widget rencontre, SAUF les boutons : demarrer un glissement sur un
+    bouton ne doit jamais faire defiler a sa place, pour ne pas gener un
+    appui. A rappeler apres chaque reconstruction du contenu (nouvelles
+    lignes), les widgets precedents n'existant plus."""
+    etat = {"y": 0}
+
+    def presser(event):
+        etat["y"] = event.y_root
+
+    def glisser(event):
+        bbox = canvas.bbox("all")
+        if bbox is None:
+            return
+        hauteur_totale = bbox[3] - bbox[1]
+        hauteur_visible = canvas.winfo_height()
+        if hauteur_totale <= hauteur_visible:
+            return
+        delta = event.y_root - etat["y"]
+        etat["y"] = event.y_root
+        haut, _ = canvas.yview()
+        frac = haut - delta / hauteur_totale
+        canvas.yview_moveto(max(0.0, min(1.0, frac)))
+
+    def poser(widget):
+        widget.bind("<ButtonPress-1>", presser, add="+")
+        widget.bind("<B1-Motion>", glisser, add="+")
+        for enfant in widget.winfo_children():
+            if not isinstance(enfant, tk.Button):
+                poser(enfant)
+
+    poser(container if container is not None else canvas)
+
+
+def schedule_auto_return(widget, seconds, back_fn, _tick_ms=10_000):
+    """Revient automatiquement (back_fn) apres `seconds` sans contact tactile
+    nulle part dans l'appli. S'appuie sur le suivi tactile deja tenu par App
+    pour la veille d'ecran (App.seconds_idle) plutot que d'ajouter un second
+    bind_all global, qu'on ne pourrait pas retirer independamment de celui de
+    la veille. Suspendu tant qu'une fenetre superposee (numpad, confirmation)
+    est ouverte, pour ne jamais detruire un ecran sous un panneau actif.
+    A appeler une fois dans __init__, apres avoir construit l'ecran."""
+    def tick():
+        if not widget.winfo_exists():
+            return
+        if not _OPEN_MODALS and widget.winfo_toplevel().seconds_idle() > seconds:
+            back_fn()
+            return
+        widget.after(_tick_ms, tick)
+    widget.after(_tick_ms, tick)
+
+
 def open_modal(parent, w, h, color=None):
     """Panneau superpose et centre, en remplacement des fenetres modales.
     Fermer avec close_modal()."""

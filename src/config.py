@@ -39,6 +39,8 @@ RECT_ABSENT_FRAMES = 8            # apres une photo, frames consecutifs SANS
                                   # etiquette avant de réarmer (laisse le
                                   # temps de retirer le ticket)
 SCAN_INACTIVITY_S = 180           # retour auto au menu si aucune etiquette
+HISTORY_INACTIVITY_S = 180        # retour auto au menu si aucun contact (Historique)
+SETTINGS_INACTIVITY_S = 180       # retour auto au menu si aucun contact (Parametres)
                                   # detectee pendant ce delai (mode scan)
 SCREEN_OFF_S = 300                # veille de l'ecran apres ce delai sans
                                   # contact (0 = jamais de veille)

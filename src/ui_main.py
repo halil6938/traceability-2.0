@@ -223,6 +223,11 @@ class App(tk.Tk):
     def _note_activity(self, _event=None):
         self._last_touch = time.time()
 
+    def seconds_idle(self):
+        """Temps ecoule depuis le dernier contact tactile, tous ecrans
+        confondus (utilise par les ecrans a retour auto, voir ui_common)."""
+        return time.time() - self._last_touch
+
     def _sleep_tick(self):
         if (config.SCREEN_OFF_S and self._sleep_overlay is None
                 and time.time() - self._last_touch > config.SCREEN_OFF_S):
