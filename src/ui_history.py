@@ -427,7 +427,10 @@ class TemperatureHistoryScreen(tk.Frame):
             bg = config.COLOR_DANGER if out else config.COLOR_CARD
             fg = "white" if out else config.COLOR_FG
 
-        Button(parent, text=text, bg=bg, fg=fg, font=config.FONT_MED,
+        # Bouton Tk ordinaire, meme en style arrondi : ce tableau en compte un
+        # par jour et par appareil (des centaines), reconstruits a chaque
+        # changement de mois ; des boutons dessines y seraient lents sur le Pi.
+        tk.Button(parent, text=text, bg=bg, fg=fg, font=config.FONT_MED,
                   width=10, bd=0, height=1,
                   command=lambda: self._edit(device, day, entry)
                   ).pack(side="left", padx=2, pady=2)

@@ -185,6 +185,33 @@ remote_lock.apply_config({"STYLE": "n-importe-quoi"})
 assert config.STYLE == "rounded"
 print("12. STYLE reglable a distance, invalide refuse : OK")
 
+# 13. tableau mensuel des temperatures : cases en boutons Tk ordinaires (il y en a
+#     des centaines), le reste de l'ecran restant arrondi
+from src.ui_common import est_bouton  # noqa: E402
+from src.ui_history import TemperatureHistoryScreen  # noqa: E402
+for nom, mn, mx in (("Frigo A", 0, 4), ("Frigo B", 0, 4)):
+    database.add_device(nom, mn, mx)
+config.STYLE = "rounded"
+t = TemperatureHistoryScreen(root, lambda: None)
+root.update()
+
+
+def tous(w):
+    out = [w]
+    for e in w.winfo_children():
+        out += tous(e)
+    return out
+
+
+cellules = [w for w in tous(t.table_frame) if est_bouton(w)]
+assert len(cellules) >= 28 * 2, len(cellules)
+assert all(isinstance(c, tk.Button) for c in cellules), "une case du tableau est arrondie"
+entete = [w for w in tous(t) if getattr(w, "_bouton", False)]
+assert entete, "les boutons du haut de l'ecran doivent rester arrondis"
+print(f"13. tableau mensuel : {len(cellules)} cases en boutons ordinaires, "
+      f"{len(entete)} boutons du haut arrondis : OK")
+t.destroy()
+
 root.destroy()
 cleanup(sandbox)
 print("\nTOUS LES TESTS OK")
