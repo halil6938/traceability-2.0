@@ -3,7 +3,7 @@ import tkinter as tk
 import threading
 from datetime import date
 from . import config, database
-from .ui_common import numpad_popup, bind_drag_scroll
+from .ui_common import Button, numpad_popup, bind_drag_scroll
 
 
 class TemperatureScreen(tk.Frame):
@@ -16,7 +16,7 @@ class TemperatureScreen(tk.Frame):
         # Header
         header = tk.Frame(self, bg=config.COLOR_BG)
         header.pack(fill="x", padx=12, pady=8)
-        tk.Button(header, text="← Retour", font=config.FONT_MED,
+        Button(header, text="← Retour", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4,
                   command=self._back).pack(side="left")
         tk.Label(header, text=f"Temperatures — {self.today.strftime('%d/%m/%Y')}",
@@ -53,7 +53,13 @@ class TemperatureScreen(tk.Frame):
             "<Configure>",
             lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
-        canvas.create_window((0, 0), window=self.rows_frame, anchor="nw", width=440)
+        fenetre = canvas.create_window((0, 0), window=self.rows_frame, anchor="nw",
+                                       width=440)
+        # La zone des lignes suit la largeur reelle de l'ecran : figee a 440 px,
+        # elle ecrasait le bouton « Saisir » et l'alerte a 1 px de large (une
+        # ligne demande environ 650 px).
+        canvas.bind("<Configure>",
+                    lambda e: canvas.itemconfigure(fenetre, width=e.width))
         canvas.configure(yscrollcommand=sb.set)
         canvas.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
@@ -129,7 +135,7 @@ class TemperatureScreen(tk.Frame):
             temp_var.set(f"{val:g}")
             refresh_alert()
 
-        tk.Button(row, text="Saisir", font=config.FONT_MED,
+        Button(row, text="Saisir", font=config.FONT_MED,
                   bg=config.COLOR_PRIMARY, fg="white", bd=0, padx=10, pady=6,
                   command=edit).pack(side="right", padx=6, pady=4)
 

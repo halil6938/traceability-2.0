@@ -5,9 +5,10 @@ import threading
 import time
 from datetime import date, datetime, timedelta
 
-from . import (config, database, heartbeat, remote_lock, screen, updater,
-               usb_manager)
+from . import (config, database, heartbeat, network, remote_lock, screen,
+               ui_rounded, updater, usb_manager)
 from .camera_scan import CameraScanScreen
+from .ui_common import Button, WifiIcon, install_tap_guard
 from .ui_temperature import TemperatureScreen
 from .ui_history import HistoryScreen
 from .ui_settings import SettingsScreen
@@ -88,27 +89,33 @@ class App(tk.Tk):
     def show_menu(self):
         self._clear()
         self.current = MainMenu(self, self)
+        install_tap_guard(self.current)
         self.after(800, self._check_ble_alert)
 
     def show_scan(self):
         self._clear()
         self.current = CameraScanScreen(self, self.show_menu)
+        install_tap_guard(self.current)
 
     def show_temperature(self):
         self._clear()
         self.current = TemperatureScreen(self, self.show_menu)
+        install_tap_guard(self.current)
 
     def show_reception(self):
         self._clear()
         self.current = ReceptionScreen(self, self.show_menu)
+        install_tap_guard(self.current)
 
     def show_history(self):
         self._clear()
         self.current = HistoryScreen(self, self.show_menu)
+        install_tap_guard(self.current)
 
     def show_settings(self):
         self._clear()
         self.current = SettingsScreen(self, self.show_menu)
+        install_tap_guard(self.current)
 
     def _periodic_sync(self):
         try:
@@ -182,7 +189,7 @@ class App(tk.Tk):
                  bg=config.COLOR_DANGER, fg="white",
                  font=config.FONT_MED, justify="center").pack(pady=16)
 
-        tk.Button(overlay, text="   OK   ", font=config.FONT_BIG,
+        Button(overlay, text="   OK   ", font=config.FONT_BIG,
                   bg="white", fg=config.COLOR_DANGER, bd=0,
                   padx=40, pady=16,
                   command=overlay.destroy).pack()
@@ -414,9 +421,10 @@ class MainMenu(tk.Frame):
     def __init__(self, master, app):
         super().__init__(master, bg=config.COLOR_BG)
         self.app = app
+        self._online = None
         self.pack(fill="both", expand=True)
 
-        # Header
+        # En-tete : titre, puis (de droite a gauche) USB, WiFi, horloge
         header = tk.Frame(self, bg=config.COLOR_BG)
         header.pack(fill="x", padx=16, pady=(10, 4))
         tk.Label(header, text="Traceability", bg=config.COLOR_BG,
@@ -424,6 +432,8 @@ class MainMenu(tk.Frame):
         self.usb_lbl = tk.Label(header, text="USB ✗", bg=config.COLOR_BG,
                                 fg=config.COLOR_WARNING, font=config.FONT_SMALL)
         self.usb_lbl.pack(side="right")
+        self.wifi = WifiIcon(header, config.COLOR_BG)
+        self.wifi.pack(side="right", padx=(0, 10))
         self.clock_lbl = tk.Label(header, text="", bg=config.COLOR_BG,
                                   fg=config.COLOR_MUTED, font=config.FONT_SMALL)
         self.clock_lbl.pack(side="right", padx=12)
@@ -433,6 +443,44 @@ class MainMenu(tk.Frame):
                               fg=config.COLOR_WARNING, font=config.FONT_MED)
         self.alert.pack(fill="x", padx=16)
 
+        if config.STYLE == "rounded":
+            self._build_rounded()
+        else:
+            self._build_classic()
+
+        self._refresh_status()
+        self._check_alerts()
+        self._poll_net()
+
+    def _build_rounded(self):
+        """Cases aux coins arrondis qui s'enfoncent au toucher."""
+        marge, ecart = 20, 28           # espace large : le doigt deborde
+        larg = (config.SCREEN_W - 2 * marge - 2 * ecart) // 3
+        haut = config.SCREEN_H - 206
+        cartes = tk.Frame(self, bg=config.COLOR_BG)
+        cartes.pack(padx=marge, pady=(6, 0))
+        specs = [
+            ("📦", "Réception", "Température des produits livrés",
+             config.COLOR_WARNING, self.app.show_reception),
+            ("📷", "Scan ticket", "Prendre une photo automatique",
+             config.COLOR_PRIMARY, self.app.show_scan),
+            ("🌡", "Relevé de température", "Saisir les temperatures du jour",
+             config.COLOR_SUCCESS, self.app.show_temperature),
+        ]
+        for i, (icone, titre, sous, couleur, cmd) in enumerate(specs):
+            ui_rounded.Card(cartes, larg, haut, icone, titre, sous, couleur,
+                            cmd).grid(row=0, column=i,
+                                      padx=(0 if i == 0 else ecart, 0))
+        bas = tk.Frame(self, bg=config.COLOR_BG)
+        bas.pack(padx=marge, pady=(20, 0))
+        moitie = (config.SCREEN_W - 2 * marge - ecart) // 2
+        ui_rounded.Bouton(bas, moitie, 56, "📊 Historique",
+                          self.app.show_history).grid(row=0, column=0)
+        ui_rounded.Bouton(bas, moitie, 56, "⚙ Paramètres",
+                          self.app.show_settings).grid(row=0, column=1,
+                                                       padx=(ecart, 0))
+
+    def _build_classic(self):
         # Deux grosses cartes empilees l'une sur l'autre
         grid = tk.Frame(self, bg=config.COLOR_BG)
         grid.pack(fill="both", expand=True, padx=20, pady=6)
@@ -457,15 +505,24 @@ class MainMenu(tk.Frame):
         # Bas : historique + parametres
         bottom = tk.Frame(self, bg=config.COLOR_BG)
         bottom.pack(fill="x", padx=20, pady=(0, 10))
-        tk.Button(bottom, text="📊 Historique", font=config.FONT_MED,
+        Button(bottom, text="📊 Historique", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=16, pady=10,
                   command=self.app.show_history).pack(side="left", expand=True, fill="x", padx=4)
-        tk.Button(bottom, text="⚙ Paramètres", font=config.FONT_MED,
+        Button(bottom, text="⚙ Paramètres", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=16, pady=10,
                   command=self.app.show_settings).pack(side="right", expand=True, fill="x", padx=4)
 
-        self._refresh_status()
-        self._check_alerts()
+    def _probe_net(self):
+        self._online = network.is_online()
+
+    def _poll_net(self):
+        """Met a jour l'icone WiFi ; le test de connexion tourne en tache de
+        fond (jusqu'a 4 s en cas de coupure) pour ne jamais bloquer l'ecran."""
+        if not self.winfo_exists():
+            return
+        if self.wifi.online != self._online:
+            self.wifi.set_online(self._online)
+        self.after(1000, self._poll_net)
 
     def _big_card(self, parent, icon, title, subtitle, color, command):
         card = tk.Frame(parent, bg=color, cursor="hand2")
@@ -481,6 +538,7 @@ class MainMenu(tk.Frame):
         return card
 
     def _refresh_status(self):
+        threading.Thread(target=self._probe_net, daemon=True).start()
         usb_ok = usb_manager.find_usb_mount() is not None
         self.clock_lbl.config(text=datetime.now().strftime("%d/%m/%Y  %H:%M"))
         self.usb_lbl.config(

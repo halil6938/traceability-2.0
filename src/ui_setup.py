@@ -1,7 +1,7 @@
 """Ecran d'assistant premier lancement : ajouter les appareils."""
 import tkinter as tk
 from . import config, database
-from .ui_common import make_button, text_popup, numpad_popup, info, confirm
+from .ui_common import Button, make_button, text_popup, numpad_popup, info, confirm
 
 
 class SetupWizard(tk.Frame):
@@ -44,7 +44,7 @@ class SetupWizard(tk.Frame):
             tk.Label(row, text=f"{d['temp_min']:g}° / {d['temp_max']:g}°",
                      bg=config.COLOR_CARD, fg=config.COLOR_MUTED,
                      font=config.FONT_SMALL).pack(side="left", padx=8)
-            tk.Button(row, text="🗑", font=config.FONT_MED, bg=config.COLOR_DANGER,
+            Button(row, text="🗑", font=config.FONT_MED, bg=config.COLOR_DANGER,
                       fg="white", bd=0, width=3,
                       command=lambda i=d["id"], n=d["name"]: self._delete(i, n)
                       ).pack(side="right", padx=8, pady=6)

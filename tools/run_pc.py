@@ -1,6 +1,7 @@
 """Lance l'application sur un PC (Windows ou Linux) pour l'essayer sans Pi.
 
-    python tools/run_pc.py
+    python tools/run_pc.py            # style en cours d'essai
+    python tools/run_pc.py --ancien   # style actuel, pour comparer
 
   - fenetre 800x480, comme l'ecran du Pi, sans plein ecran ;
   - donnees isolees dans le dossier _local/ : la configuration reelle d'un Pi
@@ -33,6 +34,9 @@ from src import config, database  # noqa: E402
 config.REMOTE_CONTROL_BASE = ""   # ni verrou ni reglages distants
 config.REPO_URL = ""              # pas de mise a jour automatique
 config.SCREEN_OFF_S = 0           # pas de veille de l'ecran
+
+# Style visuel : le nouveau par defaut sur PC, l'ancien avec --ancien
+config.STYLE = "classic" if "--ancien" in sys.argv else "rounded"
 
 from src.ui_main import App  # noqa: E402
 

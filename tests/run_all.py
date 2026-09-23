@@ -12,6 +12,7 @@ bouton) : c'est normal, ne pas y toucher pendant l'execution.
 
 A lancer avant de fabriquer une carte SD, ou apres toute modification.
 """
+import os
 import subprocess
 import sys
 import time
@@ -27,27 +28,32 @@ def main():
         print("Aucun test trouve.")
         return 1
 
-    print(f"{len(fichiers)} tests\n" + "=" * 62)
+    styles = ("classic", "rounded")
+    print(f"{len(fichiers)} tests, chacun dans les {len(styles)} styles")
+    print("=" * 66)
     echecs = []
-    for fichier in fichiers:
-        debut = time.perf_counter()
-        try:
-            r = subprocess.run([sys.executable, str(fichier)],
-                               capture_output=True, text=True,
-                               encoding="utf-8", errors="replace",
-                               timeout=DELAI_MAX)
-            ok = r.returncode == 0
-            sortie = (r.stdout or "") + (r.stderr or "")
-        except subprocess.TimeoutExpired:
-            ok, sortie = False, f"(delai de {DELAI_MAX} s depasse)"
-        duree = time.perf_counter() - debut
-        print(f"{'OK  ' if ok else 'ECHEC'}  {fichier.stem:<32} {duree:5.1f} s")
-        if not ok:
-            echecs.append((fichier.stem, sortie))
+    for style in styles:
+        env = dict(os.environ, TRACEABILITY_STYLE=style)
+        for fichier in fichiers:
+            debut = time.perf_counter()
+            try:
+                r = subprocess.run([sys.executable, str(fichier)],
+                                   capture_output=True, text=True,
+                                   encoding="utf-8", errors="replace",
+                                   timeout=DELAI_MAX, env=env)
+                ok = r.returncode == 0
+                sortie = (r.stdout or "") + (r.stderr or "")
+            except subprocess.TimeoutExpired:
+                ok, sortie = False, f"(delai de {DELAI_MAX} s depasse)"
+            duree = time.perf_counter() - debut
+            print(f"{'OK  ' if ok else 'ECHEC'}  {style:<8} {fichier.stem:<30} {duree:5.1f} s")
+            if not ok:
+                echecs.append((f"{fichier.stem} [{style}]", sortie))
 
-    print("=" * 62)
+    print("=" * 66)
     if not echecs:
-        print(f"Tous les tests passent ({len(fichiers)}/{len(fichiers)}).")
+        total = len(fichiers) * len(styles)
+        print(f"Tous les tests passent ({total}/{total}).")
         return 0
 
     print(f"{len(echecs)} test(s) en echec :\n")

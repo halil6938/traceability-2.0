@@ -36,6 +36,13 @@ def _color(v):
     raise ValueError(f"couleur invalide : {v}")
 
 
+def _style(v):
+    v = str(v).strip().lower()
+    if v not in ("classic", "rounded"):
+        raise ValueError(f"style inconnu : {v}")
+    return v
+
+
 def _posint(v):
     n = int(v)
     if n < 0:
@@ -49,6 +56,7 @@ CONFIG_WHITELIST = {
     "COLOR_CARD": _color, "COLOR_MUTED": _color,
     "SCAN_INACTIVITY_S": _posint, "RECT_STABLE_FRAMES": _posint,
     "HISTORY_INACTIVITY_S": _posint, "SETTINGS_INACTIVITY_S": _posint,
+    "STYLE": _style,
     "SCREEN_OFF_S": _posint, "HEARTBEAT_HOUR": _posint,
     "PHOTO_RETENTION_DAYS": _posint, "FOCUS_DISTANCE_CM": _posint,
     "CAMERA_ROTATION": _posint,

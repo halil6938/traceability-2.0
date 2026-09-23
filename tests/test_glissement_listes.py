@@ -13,6 +13,7 @@ from _harness import setup, cleanup  # noqa: E402
 sandbox = setup("glisse_")
 
 from src import config, database  # noqa: E402
+from src.ui_common import est_bouton  # noqa: E402
 
 database.init_db()
 config.SCREEN_W, config.SCREEN_H = 800, 480
@@ -57,7 +58,7 @@ premiere_ligne = labels[0]
 une_label = next(w for w in premiere_ligne.winfo_children()
                  if isinstance(w, tk.Label))
 un_bouton = next(w for w in premiere_ligne.winfo_children()
-                 if isinstance(w, tk.Button))
+                 if est_bouton(w))
 
 avant = scr.canvas.yview()[0]
 glisser_doigt(une_label, -400)   # glisse vers le haut : fait defiler vers le bas
@@ -86,7 +87,7 @@ premiere_row = [w for w in scr2.table_frame.winfo_children()
 jour_lbl = premiere_row.winfo_children()[0]
 assert isinstance(jour_lbl, tk.Label), "1ere case attendue : le numero du jour"
 cellule_bouton = next(w for w in premiere_row.winfo_children()
-                      if isinstance(w, tk.Button))
+                      if est_bouton(w))
 
 avant3 = scr2.canvas.yview()[0]
 glisser_doigt(jour_lbl, -300)
@@ -127,7 +128,7 @@ assert len(rows) >= 5, f"attendu plusieurs receptions, trouve {len(rows)}"
 label_fournisseur = next(w for w in rows[0].winfo_children()
                          if isinstance(w, tk.Label))
 bouton_suppr = next(w for w in rows[0].winfo_children()
-                    if isinstance(w, tk.Button) and w.cget("text") == "Suppr")
+                    if est_bouton(w) and w.cget("text") == "Suppr")
 
 avant6 = scr3.canvas.yview()[0]
 glisser_doigt(label_fournisseur, -300)

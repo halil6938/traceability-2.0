@@ -6,6 +6,7 @@ from _harness import setup, cleanup  # noqa: E402
 
 sandbox = setup("appareil_")
 from src import config, database  # noqa: E402
+from src.ui_common import est_bouton  # noqa: E402
 from src import ui_common as uc  # noqa: E402
 
 database.init_db()
@@ -22,7 +23,7 @@ print("appareils au depart :", len(database.list_devices()))
 
 
 def find_button(widget, label):
-    if isinstance(widget, tk.Button) and str(widget.cget("text")) == label:
+    if est_bouton(widget) and str(widget.cget("text")) == label:
         return widget
     for child in widget.winfo_children():
         found = find_button(child, label)

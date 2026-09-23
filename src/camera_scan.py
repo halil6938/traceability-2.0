@@ -11,6 +11,7 @@ import numpy as np
 from PIL import Image, ImageTk
 
 from . import config, database, usb_manager
+from .ui_common import Button
 
 # Calibration de la mise au point (balayage LensPosition)
 CAL_COARSE_STEPS = 16   # positions balayees en passe large
@@ -112,24 +113,24 @@ class CameraScanScreen(tk.Frame):
         status_color = config.COLOR_WARNING if test_mode else "white"
         self.status = tk.Label(bar, text=status_text,
                                fg=status_color, bg="black", font=config.FONT_MED)
-        tk.Button(bar, text="← Retour", font=config.FONT_MED,
+        Button(bar, text="← Retour", font=config.FONT_MED,
                   command=self._back, bg=config.COLOR_CARD, fg="white",
                   activebackground=config.COLOR_MUTED, bd=0, padx=16, pady=4
                   ).pack(side="right", padx=8, pady=4)
         if test_mode:
-            tk.Button(bar, text="↺ Auto", font=config.FONT_MED,
+            Button(bar, text="↺ Auto", font=config.FONT_MED,
                       command=self._clear_calibration, bg=config.COLOR_CARD,
                       fg="white", bd=0, padx=12, pady=4
                       ).pack(side="right", padx=4, pady=4)
-            tk.Button(bar, text="🎯 Calibrer", font=config.FONT_MED,
+            Button(bar, text="🎯 Calibrer", font=config.FONT_MED,
                       command=self._start_calibration, bg=config.COLOR_PRIMARY,
                       fg="white", bd=0, padx=12, pady=4
                       ).pack(side="right", padx=4, pady=4)
-            tk.Button(bar, text="▶", font=config.FONT_MED,
+            Button(bar, text="▶", font=config.FONT_MED,
                       command=lambda: self._nudge_focus(FOCUS_STEP),
                       bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4
                       ).pack(side="right", padx=2, pady=4)
-            tk.Button(bar, text="◀", font=config.FONT_MED,
+            Button(bar, text="◀", font=config.FONT_MED,
                       command=lambda: self._nudge_focus(-FOCUS_STEP),
                       bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4
                       ).pack(side="right", padx=2, pady=4)

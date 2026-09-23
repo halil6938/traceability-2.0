@@ -2,9 +2,9 @@
 import tkinter as tk
 from datetime import date, datetime, time
 from calendar import monthrange
-from . import config, database, pdf_export
-from .ui_common import (numpad_popup, info, error, confirm,
-                        open_modal, close_modal, bind_drag_scroll,
+from . import config, database, pdf_export, ui_rounded
+from .ui_common import (Button, numpad_popup, info, error, confirm,
+                        open_modal, close_modal, bind_drag_scroll, install_tap_guard,
                         schedule_auto_return as auto_return)
 
 # Heure attribuee a une reception saisie a posteriori : l'heure exacte
@@ -19,22 +19,33 @@ MONTHS = ["Janvier", "Fevrier", "Mars", "Avril", "Mai", "Juin",
 # Landing
 # ---------------------------------------------------------------------------
 
+def _retour_accueil(master, on_done):
+    """Retour d'un sous-ecran vers l'accueil de l'historique."""
+    install_tap_guard(HistoryScreen(master, on_done))
+
+
 class HistoryScreen(tk.Frame):
     """Menu de choix : Tickets ou Temperatures."""
 
     def __init__(self, master, on_done):
-        super().__init__(master, bg=config.COLOR_BG)
+        rounded = config.STYLE == "rounded"
+        fond = ui_rounded.HIST_FOND if rounded else config.COLOR_BG
+        super().__init__(master, bg=fond)
         self.on_done = on_done
         auto_return(self, config.HISTORY_INACTIVITY_S, self._back)
         self.pack(fill="both", expand=True)
 
-        header = tk.Frame(self, bg=config.COLOR_BG)
+        header = tk.Frame(self, bg=fond)
         header.pack(fill="x", padx=16, pady=(10, 4))
-        tk.Button(header, text="← Retour", font=config.FONT_MED,
+        Button(header, text="← Retour", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4,
                   command=self._back).pack(side="left")
-        tk.Label(header, text="Historique", bg=config.COLOR_BG,
+        tk.Label(header, text="Historique", bg=fond,
                  fg=config.COLOR_FG, font=config.FONT_TITLE).pack(side="left", padx=12)
+
+        if rounded:
+            self._build_liste()
+            return
 
         grid = tk.Frame(self, bg=config.COLOR_BG)
         grid.pack(fill="both", expand=True, padx=20, pady=20)
@@ -46,17 +57,44 @@ class HistoryScreen(tk.Frame):
         self._big_card(grid, "📷", "Tickets",
                        "Consulter les photos de tickets",
                        config.COLOR_PRIMARY, self._show_tickets
-                       ).grid(row=0, column=0, sticky="nsew", padx=8, pady=8)
+                       ).grid(row=0, column=0, **self._cellule())
         self._big_card(grid, "🌡", "Temperatures",
                        "Tableau mensuel des releves",
                        config.COLOR_SUCCESS, self._show_temperatures
-                       ).grid(row=0, column=1, sticky="nsew", padx=8, pady=8)
+                       ).grid(row=0, column=1, **self._cellule())
         self._big_card(grid, "📦", "Réceptions",
                        "Relevés des produits livrés",
                        config.COLOR_WARNING, self._show_receptions
-                       ).grid(row=0, column=2, sticky="nsew", padx=8, pady=8)
+                       ).grid(row=0, column=2, **self._cellule())
+
+    def _build_liste(self):
+        """Style arrondi : trois lignes pleines largeur sur fond quasi noir,
+        pour ne plus confondre ce menu avec le menu principal (trois tuiles)."""
+        lignes = tk.Frame(self, bg=ui_rounded.HIST_FOND)
+        lignes.pack(padx=24, pady=(10, 0))
+        specs = [
+            ("01", "Tickets", "Consulter les photos de tickets",
+             config.COLOR_PRIMARY, self._show_tickets),
+            ("02", "Temperatures", "Tableau mensuel des releves",
+             config.COLOR_SUCCESS, self._show_temperatures),
+            ("03", "Réceptions", "Relevés des produits livrés",
+             config.COLOR_WARNING, self._show_receptions),
+        ]
+        for i, (num, titre, sous, accent, cmd) in enumerate(specs):
+            ui_rounded.Ligne(lignes, config.SCREEN_W - 48, 116, num, titre, sous,
+                             accent, cmd).grid(row=i, column=0,
+                                               pady=(0 if i == 0 else 12, 0))
+
+    def _cellule(self):
+        if config.STYLE == "rounded":
+            return {"sticky": "", "padx": 14, "pady": 8}   # 28 px entre les cases
+        return {"sticky": "nsew", "padx": 8, "pady": 8}
 
     def _big_card(self, parent, icon, title, subtitle, color, command):
+        if config.STYLE == "rounded":
+            larg = (config.SCREEN_W - 2 * 20 - 6 * 14) // 3
+            return ui_rounded.Card(parent, larg, 300, icon, title, subtitle,
+                                   color, command)
         card = tk.Frame(parent, bg=color, cursor="hand2")
         card.bind("<Button-1>", lambda e: command())
         tk.Label(card, text=icon, bg=color, fg="white",
@@ -71,18 +109,18 @@ class HistoryScreen(tk.Frame):
 
     def _show_tickets(self):
         self.destroy()
-        PhotoHistoryScreen(self.master,
-                           lambda: HistoryScreen(self.master, self.on_done))
+        install_tap_guard(PhotoHistoryScreen(
+            self.master, lambda: _retour_accueil(self.master, self.on_done)))
 
     def _show_temperatures(self):
         self.destroy()
-        TemperatureHistoryScreen(self.master,
-                                 lambda: HistoryScreen(self.master, self.on_done))
+        install_tap_guard(TemperatureHistoryScreen(
+            self.master, lambda: _retour_accueil(self.master, self.on_done)))
 
     def _show_receptions(self):
         self.destroy()
-        ReceptionHistoryScreen(self.master,
-                               lambda: HistoryScreen(self.master, self.on_done))
+        install_tap_guard(ReceptionHistoryScreen(
+            self.master, lambda: _retour_accueil(self.master, self.on_done)))
 
     def _back(self):
         self.destroy()
@@ -112,7 +150,7 @@ class PhotoHistoryScreen(tk.Frame):
         # Header
         header = tk.Frame(self, bg="black")
         header.pack(fill="x", padx=8, pady=6)
-        tk.Button(header, text="← Retour", font=config.FONT_MED,
+        Button(header, text="← Retour", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4,
                   command=self._back).pack(side="left")
         tk.Label(header, text="Tickets", bg="black", fg="white",
@@ -121,13 +159,13 @@ class PhotoHistoryScreen(tk.Frame):
         # Navigation par mois
         nav = tk.Frame(self, bg="black")
         nav.pack(fill="x", padx=8)
-        tk.Button(nav, text="◀", font=config.FONT_MED,
+        Button(nav, text="◀", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=16, pady=4,
                   command=self._prev_month).pack(side="left")
         self.month_lbl = tk.Label(nav, text="", bg="black", fg="white",
                                   font=config.FONT_MED)
         self.month_lbl.pack(side="left", expand=True)
-        tk.Button(nav, text="▶", font=config.FONT_MED,
+        Button(nav, text="▶", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=16, pady=4,
                   command=self._next_month).pack(side="right")
 
@@ -144,10 +182,10 @@ class PhotoHistoryScreen(tk.Frame):
         # Navigation photo
         nav2 = tk.Frame(self, bg="black")
         nav2.pack(fill="x", padx=8, pady=(6, 2))
-        tk.Button(nav2, text="◀", font=config.FONT_BIG,
+        Button(nav2, text="◀", font=config.FONT_BIG,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=24, pady=8,
                   command=self._prev_photo).pack(side="left")
-        tk.Button(nav2, text="▶", font=config.FONT_BIG,
+        Button(nav2, text="▶", font=config.FONT_BIG,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=24, pady=8,
                   command=self._next_photo).pack(side="right")
         self.info_lbl = tk.Label(nav2, text="", bg="black",
@@ -158,7 +196,7 @@ class PhotoHistoryScreen(tk.Frame):
         # Bouton supprimer
         del_bar = tk.Frame(self, bg="black")
         del_bar.pack(fill="x", padx=8, pady=(0, 6))
-        self.del_btn = tk.Button(del_bar, text="🗑  Supprimer cette photo",
+        self.del_btn = Button(del_bar, text="🗑  Supprimer cette photo",
                                  font=config.FONT_MED,
                                  bg=config.COLOR_DANGER, fg="white", bd=0,
                                  pady=8, command=self._delete_current)
@@ -290,22 +328,22 @@ class TemperatureHistoryScreen(tk.Frame):
 
         header = tk.Frame(self, bg=config.COLOR_BG)
         header.pack(fill="x", padx=10, pady=6)
-        tk.Button(header, text="← Retour", font=config.FONT_MED,
+        Button(header, text="← Retour", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4,
                   command=self._back).pack(side="left")
         self.title_lbl = tk.Label(header, text="", bg=config.COLOR_BG,
                                   fg=config.COLOR_FG, font=config.FONT_MED)
         self.title_lbl.pack(side="left", padx=8)
-        tk.Button(header, text="Export PDF", font=config.FONT_MED,
+        Button(header, text="Export PDF", font=config.FONT_MED,
                   bg=config.COLOR_SUCCESS, fg="white", bd=0, padx=10, pady=4,
                   command=self._export).pack(side="right", padx=4)
 
         nav = tk.Frame(self, bg=config.COLOR_BG)
         nav.pack(fill="x", padx=10)
-        tk.Button(nav, text="◀ Mois precedent", font=config.FONT_MED,
+        Button(nav, text="◀ Mois precedent", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4,
                   command=self._prev_month).pack(side="left")
-        tk.Button(nav, text="Mois suivant ▶", font=config.FONT_MED,
+        Button(nav, text="Mois suivant ▶", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4,
                   command=self._next_month).pack(side="right")
 
@@ -389,7 +427,7 @@ class TemperatureHistoryScreen(tk.Frame):
             bg = config.COLOR_DANGER if out else config.COLOR_CARD
             fg = "white" if out else config.COLOR_FG
 
-        tk.Button(parent, text=text, bg=bg, fg=fg, font=config.FONT_MED,
+        Button(parent, text=text, bg=bg, fg=fg, font=config.FONT_MED,
                   width=10, bd=0, height=1,
                   command=lambda: self._edit(device, day, entry)
                   ).pack(side="left", padx=2, pady=2)
@@ -444,25 +482,25 @@ class ReceptionHistoryScreen(tk.Frame):
 
         header = tk.Frame(self, bg=config.COLOR_BG)
         header.pack(fill="x", padx=10, pady=6)
-        tk.Button(header, text="← Retour", font=config.FONT_MED,
+        Button(header, text="← Retour", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4,
                   command=self._back).pack(side="left")
         self.title_lbl = tk.Label(header, text="", bg=config.COLOR_BG,
                                   fg=config.COLOR_FG, font=config.FONT_MED)
         self.title_lbl.pack(side="left", padx=8)
-        tk.Button(header, text="Export PDF", font=config.FONT_MED,
+        Button(header, text="Export PDF", font=config.FONT_MED,
                   bg=config.COLOR_SUCCESS, fg="white", bd=0, padx=10, pady=4,
                   command=self._export).pack(side="right", padx=4)
-        tk.Button(header, text="+ Ajouter", font=config.FONT_MED,
+        Button(header, text="+ Ajouter", font=config.FONT_MED,
                   bg=config.COLOR_PRIMARY, fg="white", bd=0, padx=10, pady=4,
                   command=self._add).pack(side="right", padx=4)
 
         nav = tk.Frame(self, bg=config.COLOR_BG)
         nav.pack(fill="x", padx=10)
-        tk.Button(nav, text="◀ Mois precedent", font=config.FONT_MED,
+        Button(nav, text="◀ Mois precedent", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4,
                   command=self._prev_month).pack(side="left")
-        tk.Button(nav, text="Mois suivant ▶", font=config.FONT_MED,
+        Button(nav, text="Mois suivant ▶", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4,
                   command=self._next_month).pack(side="right")
 
@@ -519,11 +557,11 @@ class ReceptionHistoryScreen(tk.Frame):
             tk.Label(row, text=dt.strftime("%d/%m  %H:%M"), bg=config.COLOR_CARD,
                      fg=config.COLOR_MUTED, font=config.FONT_MED, width=12,
                      anchor="w").pack(side="left", padx=8, pady=6)
-            tk.Button(row, text="Suppr", font=config.FONT_SMALL,
+            Button(row, text="Suppr", font=config.FONT_SMALL,
                       bg=config.COLOR_DANGER, fg="white", bd=0, padx=8, pady=4,
                       command=lambda x=r: self._delete(x)
                       ).pack(side="right", padx=(0, 8), pady=4)
-            tk.Button(row, text="Modifier", font=config.FONT_SMALL,
+            Button(row, text="Modifier", font=config.FONT_SMALL,
                       bg=config.COLOR_PRIMARY, fg="white", bd=0, padx=8, pady=4,
                       command=lambda x=r: self._edit(x)
                       ).pack(side="right", padx=4, pady=4)
@@ -555,13 +593,13 @@ class ReceptionHistoryScreen(tk.Frame):
         h = min(80 + len(suppliers) * 52 + 50, config.SCREEN_H - 30)
         panel = self._panel("Quel fournisseur ?", 420, h)
         for s in suppliers:
-            tk.Button(panel, text=s["name"], font=config.FONT_MED,
+            Button(panel, text=s["name"], font=config.FONT_MED,
                       bg=config.COLOR_CARD, fg=config.COLOR_FG, bd=0,
                       padx=12, pady=8,
                       command=(lambda x=s: (close_modal(panel),
                                             self._pick_day(x)))
                       ).pack(fill="x", padx=16, pady=2)
-        tk.Button(panel, text="Annuler", font=config.FONT_SMALL,
+        Button(panel, text="Annuler", font=config.FONT_SMALL,
                   bg=config.COLOR_DANGER, fg="white", bd=0, pady=6,
                   command=lambda: close_modal(panel)
                   ).pack(fill="x", padx=16, pady=(6, 8))
@@ -577,7 +615,7 @@ class ReceptionHistoryScreen(tk.Frame):
             grid.columnconfigure(col, weight=1)
         for day in range(1, last + 1):
             jour = date(self.year, self.month, day)
-            btn = tk.Button(grid, text=str(day), font=config.FONT_MED,
+            btn = Button(grid, text=str(day), font=config.FONT_MED,
                             bg=config.COLOR_CARD, fg=config.COLOR_FG, bd=0,
                             width=3, pady=6,
                             command=(lambda d=jour: (close_modal(panel),
@@ -585,7 +623,7 @@ class ReceptionHistoryScreen(tk.Frame):
             if jour > today:
                 btn.config(state="disabled", fg=config.COLOR_MUTED)
             btn.grid(row=(day - 1) // 7, column=(day - 1) % 7, padx=2, pady=2)
-        tk.Button(panel, text="Annuler", font=config.FONT_SMALL,
+        Button(panel, text="Annuler", font=config.FONT_SMALL,
                   bg=config.COLOR_DANGER, fg="white", bd=0, pady=6,
                   command=lambda: close_modal(panel)
                   ).pack(fill="x", padx=16, pady=(8, 8))

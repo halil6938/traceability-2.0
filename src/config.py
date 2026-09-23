@@ -1,4 +1,5 @@
 """Configuration globale de l'application Traceability."""
+import os
 import threading
 from pathlib import Path
 
@@ -70,6 +71,11 @@ HEARTBEAT_HOUR = 8           # heure du message quotidien « en ligne »
 HEARTBEAT_CHECK_S = 1800     # frequence de verification (30 min)
 
 # Couleurs UI
+# Style visuel : "classic" (actuel) ou "rounded" (cases arrondies qui
+# s'enfoncent au toucher, memes couleurs).
+# Reglable a distance, client par client.
+STYLE = os.environ.get("TRACEABILITY_STYLE", "classic")   # variable : essais
+
 COLOR_BG = "#1e293b"
 COLOR_FG = "#f1f5f9"
 COLOR_PRIMARY = "#0ea5e9"

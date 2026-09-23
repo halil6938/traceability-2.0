@@ -5,7 +5,7 @@ import tkinter as tk
 from datetime import date, datetime
 
 from . import config, database, ble_thermo
-from .ui_common import (text_popup, numpad_popup, confirm, error,
+from .ui_common import (Button, text_popup, numpad_popup, confirm, error,
                         open_modal, close_modal)
 
 
@@ -17,13 +17,13 @@ class ReceptionScreen(tk.Frame):
 
         header = tk.Frame(self, bg=config.COLOR_BG)
         header.pack(fill="x", padx=12, pady=8)
-        tk.Button(header, text="← Retour", font=config.FONT_MED,
+        Button(header, text="← Retour", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4,
                   command=self._back).pack(side="left")
         tk.Label(header, text="Réception", bg=config.COLOR_BG,
                  fg=config.COLOR_FG, font=config.FONT_TITLE
                  ).pack(side="left", padx=16)
-        tk.Button(header, text="⚙ Fournisseurs", font=config.FONT_MED,
+        Button(header, text="⚙ Fournisseurs", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4,
                   command=self._manage_suppliers).pack(side="right")
         # Indicateur d'etat de la liaison au pistolet (mis a jour par polling)
@@ -164,10 +164,10 @@ class ReceptionScreen(tk.Frame):
 
         btns = tk.Frame(overlay, bg=config.COLOR_BG)
         btns.pack(pady=24)
-        tk.Button(btns, text="← Retour", font=config.FONT_MED, bg=config.COLOR_CARD,
+        Button(btns, text="← Retour", font=config.FONT_MED, bg=config.COLOR_CARD,
                   fg="white", bd=0, padx=16, pady=8, command=go_back
                   ).pack(side="left", padx=6)
-        tk.Button(btns, text="⌨ Saisie manuelle", font=config.FONT_MED,
+        Button(btns, text="⌨ Saisie manuelle", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=16, pady=8,
                   command=close).pack(side="left", padx=6)
 
@@ -190,7 +190,7 @@ class ReceptionScreen(tk.Frame):
             self.suppliers_frame.columnconfigure(col, weight=1)
         for i, s in enumerate(suppliers):
             self.suppliers_frame.rowconfigure(i // cols, weight=1)
-            tk.Button(self.suppliers_frame, text=s["name"], font=config.FONT_BIG,
+            Button(self.suppliers_frame, text=s["name"], font=config.FONT_BIG,
                       bg=config.COLOR_PRIMARY, fg="white", bd=0,
                       wraplength=200,
                       command=lambda x=s: self._measure(x)
@@ -215,7 +215,7 @@ class ReceptionScreen(tk.Frame):
             tk.Label(line, text=r["supplier_name"], bg=config.COLOR_BG,
                      fg=config.COLOR_FG, font=config.FONT_SMALL, anchor="w"
                      ).pack(side="left", padx=4, expand=True, fill="x")
-            tk.Button(line, text="🗑", font=config.FONT_SMALL,
+            Button(line, text="🗑", font=config.FONT_SMALL,
                       bg=config.COLOR_DANGER, fg="white", bd=0, width=3,
                       command=lambda x=r: self._delete_reception(x)
                       ).pack(side="right", padx=(4, 6), pady=2)
@@ -340,13 +340,13 @@ class ReceptionScreen(tk.Frame):
 
         btns = tk.Frame(top, bg=config.COLOR_BG)
         btns.pack(side="bottom", fill="x", padx=12, pady=10)
-        tk.Button(btns, text="Annuler", font=config.FONT_MED, bg=config.COLOR_CARD,
+        Button(btns, text="Annuler", font=config.FONT_MED, bg=config.COLOR_CARD,
                   fg="white", bd=0, command=cancel
                   ).pack(side="left", expand=True, fill="x", padx=3, ipady=8)
-        tk.Button(btns, text="⌨ Manuel", font=config.FONT_MED, bg=config.COLOR_CARD,
+        Button(btns, text="⌨ Manuel", font=config.FONT_MED, bg=config.COLOR_CARD,
                   fg="white", bd=0, command=manual
                   ).pack(side="left", expand=True, fill="x", padx=3, ipady=8)
-        save_btn = tk.Button(btns, text="Enregistrer", font=config.FONT_MED,
+        save_btn = Button(btns, text="Enregistrer", font=config.FONT_MED,
                              bg=config.COLOR_MUTED, fg="white", bd=0,
                              state="disabled", command=save)
         save_btn.pack(side="left", expand=True, fill="x", padx=3, ipady=8)
@@ -370,7 +370,7 @@ class ReceptionScreen(tk.Frame):
         hdr.pack(fill="x", padx=10, pady=8)
         tk.Label(hdr, text="Fournisseurs", bg=config.COLOR_BG,
                  fg=config.COLOR_FG, font=config.FONT_BIG).pack(side="left")
-        tk.Button(hdr, text="✕", bg=config.COLOR_DANGER, fg="white",
+        Button(hdr, text="✕", bg=config.COLOR_DANGER, fg="white",
                   font=config.FONT_MED, bd=0, padx=12,
                   command=close_mgr).pack(side="right")
 
@@ -407,10 +407,10 @@ class ReceptionScreen(tk.Frame):
                         self._render_suppliers()
                         self._render_today()
 
-                tk.Button(row, text="Modifier", font=config.FONT_SMALL,
+                Button(row, text="Modifier", font=config.FONT_SMALL,
                           bg=config.COLOR_PRIMARY, fg="white", bd=0, padx=8,
                           command=edit).pack(side="right", padx=4, pady=4)
-                tk.Button(row, text="🗑", font=config.FONT_MED, bg=config.COLOR_DANGER,
+                Button(row, text="🗑", font=config.FONT_MED, bg=config.COLOR_DANGER,
                           fg="white", bd=0, width=3,
                           command=remove).pack(side="right", padx=4, pady=4)
 
@@ -499,20 +499,20 @@ class ReceptionScreen(tk.Frame):
 
             cbtns = tk.Frame(cfg, bg=config.COLOR_BG)
             cbtns.pack(side="bottom", fill="x", padx=12, pady=10)
-            tk.Button(cbtns, text="🔍 Détecter", font=config.FONT_MED,
+            Button(cbtns, text="🔍 Détecter", font=config.FONT_MED,
                       bg=config.COLOR_PRIMARY, fg="white", bd=0, command=detect
                       ).pack(side="left", expand=True, fill="x", padx=3, ipady=8)
-            tk.Button(cbtns, text="⌨ Saisir MAC", font=config.FONT_MED,
+            Button(cbtns, text="⌨ Saisir MAC", font=config.FONT_MED,
                       bg=config.COLOR_CARD, fg="white", bd=0, command=manual
                       ).pack(side="left", expand=True, fill="x", padx=3, ipady=8)
-            tk.Button(cbtns, text="Fermer", font=config.FONT_MED,
+            Button(cbtns, text="Fermer", font=config.FONT_MED,
                       bg=config.COLOR_CARD, fg="white", bd=0, command=close_cfg
                       ).pack(side="left", expand=True, fill="x", padx=3, ipady=8)
 
-        tk.Button(bottom, text="+ Ajouter", font=config.FONT_MED,
+        Button(bottom, text="+ Ajouter", font=config.FONT_MED,
                   bg=config.COLOR_PRIMARY, fg="white", bd=0, padx=12, pady=8,
                   command=add).pack(side="left", expand=True, fill="x", padx=3)
-        tk.Button(bottom, text="🌡 Pistolet BLE", font=config.FONT_MED,
+        Button(bottom, text="🌡 Pistolet BLE", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=12, pady=8,
                   command=config_thermo).pack(side="right", expand=True, fill="x", padx=3)
 

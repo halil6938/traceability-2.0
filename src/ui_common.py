@@ -1,6 +1,7 @@
 """Widgets et helpers UI communs, optimises pour ecran tactile 800x480 paysage."""
+import time
 import tkinter as tk
-from . import config
+from . import config, ui_rounded
 
 
 # AUCUNE fenetre modale dans cette appli.
@@ -18,6 +19,62 @@ from . import config
 # L'API est inchangee pour les appelants (parent.wait_window fonctionne aussi
 # bien sur un cadre que sur une fenetre).
 _OPEN_MODALS = []
+
+
+class WifiIcon(tk.Canvas):
+    """Icone WiFi : verte connecte, rouge barree deconnecte, grise inconnu."""
+
+    def __init__(self, parent, bg):
+        super().__init__(parent, width=38, height=28, bg=bg,
+                         highlightthickness=0, bd=0)
+        self._bg = bg
+        self.online = None
+        self.set_online(None)
+
+    def set_online(self, online):
+        self.online = online
+        color = (config.COLOR_MUTED if online is None
+                 else config.COLOR_SUCCESS if online else config.COLOR_DANGER)
+        self.delete("all")
+        cx, cy = 19, 24
+        for r in (8, 14, 20):
+            self.create_arc(cx - r, cy - r, cx + r, cy + r, start=45, extent=90,
+                            style="arc", outline=color, width=3)
+        self.create_oval(cx - 3, cy - 3, cx + 3, cy + 3, fill=color, outline=color)
+        if online is False:
+            self.create_line(5, 3, 33, 26, fill=self._bg, width=7)   # marge
+            self.create_line(5, 3, 33, 26, fill=color, width=3)      # la barre
+
+
+# Protection contre les « doubles touches » : un contact parasite ou un second
+# appui impatient juste apres un changement d'ecran atterrirait sur un bouton
+# du NOUVEL ecran (mauvais menu, mauvais fournisseur...). Pendant un court
+# instant apres l'arrivee sur un ecran, ses widgets ignorent le toucher.
+_TAP_TAG = "TapGuard"
+_guard_until = 0.0
+
+
+def _swallow(_event):
+    return "break" if time.time() < _guard_until else None
+
+
+def install_tap_guard(screen, seconds=0.4):
+    """A appeler quand un ecran vient de s'afficher : ses widgets (present a
+    cet instant) ignorent le toucher pendant `seconds`."""
+    global _guard_until
+    _guard_until = time.time() + seconds
+    root = screen.winfo_toplevel()
+    root.bind_class(_TAP_TAG, "<ButtonPress-1>", _swallow)
+    root.bind_class(_TAP_TAG, "<ButtonRelease-1>", _swallow)
+
+    def poser(w):
+        tags = w.bindtags()
+        if _TAP_TAG not in tags:
+            w.bindtags((_TAP_TAG,) + tags)
+        for enfant in w.winfo_children():
+            poser(enfant)
+
+    poser(screen)
 
 
 def bind_drag_scroll(canvas, container=None):
@@ -53,7 +110,7 @@ def bind_drag_scroll(canvas, container=None):
         widget.bind("<ButtonPress-1>", presser, add="+")
         widget.bind("<B1-Motion>", glisser, add="+")
         for enfant in widget.winfo_children():
-            if not isinstance(enfant, tk.Button):
+            if not est_bouton(enfant):
                 poser(enfant)
 
     poser(container if container is not None else canvas)
@@ -112,8 +169,20 @@ def close_all_modals():
         close_modal(panel)
 
 
+def Button(master, **kw):
+    """Bouton de toute l'appli : arrondi et qui s'enfonce en style « rounded »,
+    bouton Tk ordinaire sinon. Meme interface dans les deux cas."""
+    if config.STYLE == "rounded":
+        return ui_rounded.RoundedButton(master, **kw)
+    return tk.Button(master, **kw)
+
+
+def est_bouton(widget):
+    return isinstance(widget, tk.Button) or getattr(widget, "_bouton", False)
+
+
 def make_button(master, text, command, bg=None, fg="white", font=None, **kw):
-    return tk.Button(
+    return Button(
         master, text=text, command=command,
         bg=bg or config.COLOR_PRIMARY, fg=fg,
         font=font or config.FONT_BIG,
@@ -172,10 +241,10 @@ def numpad_popup(parent, title="Saisie", initial="", allow_negative=True, allow_
     ]
     for r, row in enumerate(buttons):
         for c, ch in enumerate(row):
-            tk.Button(grid, text=ch, font=config.FONT_BIG, width=4, height=1,
+            Button(grid, text=ch, font=config.FONT_BIG, width=4, height=1,
                       bg=config.COLOR_CARD, fg=config.COLOR_FG, bd=0,
                       command=lambda x=ch: press(x)).grid(row=r, column=c, padx=3, pady=3)
-    tk.Button(grid, text="⌫", font=config.FONT_BIG, width=4, height=1,
+    Button(grid, text="⌫", font=config.FONT_BIG, width=4, height=1,
               bg=config.COLOR_DANGER, fg="white", bd=0,
               command=lambda: press("⌫")).grid(row=0, column=3, rowspan=4, sticky="ns", padx=3, pady=3)
 
@@ -190,9 +259,9 @@ def numpad_popup(parent, title="Saisie", initial="", allow_negative=True, allow_
 
     btns = tk.Frame(top, bg=config.COLOR_BG)
     btns.pack(pady=8, fill="x", padx=12)
-    tk.Button(btns, text="Annuler", font=config.FONT_MED, bg=config.COLOR_CARD,
+    Button(btns, text="Annuler", font=config.FONT_MED, bg=config.COLOR_CARD,
               fg=config.COLOR_FG, bd=0, command=cancel).pack(side="left", expand=True, fill="x", padx=4, ipady=8)
-    tk.Button(btns, text="OK", font=config.FONT_MED, bg=config.COLOR_SUCCESS,
+    Button(btns, text="OK", font=config.FONT_MED, bg=config.COLOR_SUCCESS,
               fg="white", bd=0, command=ok).pack(side="right", expand=True, fill="x", padx=4, ipady=8)
 
     parent.wait_window(top)
@@ -239,7 +308,7 @@ def text_popup(parent, title="Saisie", initial=""):
 
     for r, row in enumerate(keyboard):
         for c, ch in enumerate(row):
-            tk.Button(grid, text=ch, font=config.FONT_SMALL,
+            Button(grid, text=ch, font=config.FONT_SMALL,
                       bg=config.COLOR_CARD, fg=config.COLOR_FG, bd=0,
                       command=lambda x=ch: press(x)
                       ).grid(row=r, column=c, sticky="ew", padx=1, pady=2, ipady=7)
@@ -250,15 +319,15 @@ def text_popup(parent, title="Saisie", initial=""):
     actions.columnconfigure(0, weight=4)
     actions.columnconfigure(1, weight=2)
     actions.columnconfigure(2, weight=2)
-    tk.Button(actions, text="Espace", font=config.FONT_SMALL,
+    Button(actions, text="Espace", font=config.FONT_SMALL,
               bg=config.COLOR_CARD, fg=config.COLOR_FG, bd=0,
               command=lambda: press(" ")
               ).grid(row=0, column=0, sticky="ew", padx=1, pady=2, ipady=9)
-    tk.Button(actions, text="Maj ⇧", font=config.FONT_SMALL,
+    Button(actions, text="Maj ⇧", font=config.FONT_SMALL,
               bg=config.COLOR_CARD, fg=config.COLOR_FG, bd=0,
               command=toggle_case
               ).grid(row=0, column=1, sticky="ew", padx=1, pady=2, ipady=9)
-    tk.Button(actions, text="⌫", font=config.FONT_SMALL,
+    Button(actions, text="⌫", font=config.FONT_SMALL,
               bg=config.COLOR_DANGER, fg="white", bd=0,
               command=backspace
               ).grid(row=0, column=2, sticky="ew", padx=1, pady=2, ipady=9)
@@ -271,10 +340,10 @@ def text_popup(parent, title="Saisie", initial=""):
 
     btns = tk.Frame(top, bg=config.COLOR_BG)
     btns.pack(pady=6, fill="x", padx=8)
-    tk.Button(btns, text="Annuler", font=config.FONT_MED, bg=config.COLOR_CARD,
+    Button(btns, text="Annuler", font=config.FONT_MED, bg=config.COLOR_CARD,
               fg=config.COLOR_FG, bd=0, command=lambda: close_modal(top)
               ).pack(side="left", expand=True, fill="x", padx=4, ipady=8)
-    tk.Button(btns, text="OK", font=config.FONT_MED, bg=config.COLOR_SUCCESS,
+    Button(btns, text="OK", font=config.FONT_MED, bg=config.COLOR_SUCCESS,
               fg="white", bd=0, command=ok
               ).pack(side="right", expand=True, fill="x", padx=4, ipady=8)
 
@@ -305,7 +374,7 @@ def _dialog(parent, title, msg, color, buttons):
         close_modal(top)
 
     for text, val, bg in buttons:
-        tk.Button(btns, text=text, font=config.FONT_MED, bg=bg, fg="white",
+        Button(btns, text=text, font=config.FONT_MED, bg=bg, fg="white",
                   bd=0, command=lambda v=val: choose(v)
                   ).pack(side="left", expand=True, fill="x", padx=4, ipady=10)
 

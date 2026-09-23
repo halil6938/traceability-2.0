@@ -23,6 +23,7 @@ def setup(prefix="test_"):
         except Exception:
             pass
     sandbox = Path(tempfile.mkdtemp(prefix=prefix))
+    os.environ["TRACEABILITY_TEST"] = "1"      # network.is_online : aucune connexion
     os.environ["HOME"] = str(sandbox)
     os.environ["USERPROFILE"] = str(sandbox)
     if str(REPO) not in sys.path:

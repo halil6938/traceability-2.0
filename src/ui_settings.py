@@ -5,7 +5,7 @@ import sys
 import threading
 from datetime import date
 from . import config, database, pdf_export
-from .ui_common import (make_button, text_popup, numpad_popup, info, confirm,
+from .ui_common import (Button, make_button, text_popup, numpad_popup, info, confirm,
                         error, close_all_modals, schedule_auto_return as auto_return)
 
 logger = logging.getLogger(__name__)
@@ -36,17 +36,17 @@ def _pick_device(parent, sensor, devices, on_done):
         on_done()
 
     for d in devices:
-        tk.Button(pick, text=d["name"], font=config.FONT_MED,
+        Button(pick, text=d["name"], font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg=config.COLOR_FG, bd=0,
                   padx=12, pady=8,
                   command=lambda did=d["id"]: choose(did)
                   ).pack(fill="x", padx=16, pady=2)
 
-    tk.Button(pick, text="— Desassigner —", font=config.FONT_SMALL,
+    Button(pick, text="— Desassigner —", font=config.FONT_SMALL,
               bg=config.COLOR_DANGER, fg="white", bd=0, padx=12, pady=6,
               command=lambda: choose(None)
               ).pack(fill="x", padx=16, pady=(6, 4))
-    tk.Button(pick, text="Annuler", font=config.FONT_SMALL,
+    Button(pick, text="Annuler", font=config.FONT_SMALL,
               bg=config.COLOR_CARD, fg="white", bd=0, padx=12, pady=6,
               command=pick.destroy).pack(fill="x", padx=16, pady=(0, 8))
 
@@ -60,7 +60,7 @@ class SettingsScreen(tk.Frame):
 
         header = tk.Frame(self, bg=config.COLOR_BG)
         header.pack(fill="x", padx=12, pady=8)
-        tk.Button(header, text="← Retour", font=config.FONT_MED,
+        Button(header, text="← Retour", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4,
                   command=self._back).pack(side="left")
         tk.Label(header, text="Parametres", bg=config.COLOR_BG,
@@ -146,10 +146,10 @@ class SettingsScreen(tk.Frame):
             tk.Label(row, text=f"{d['temp_min']:g}° / {d['temp_max']:g}°",
                      bg=config.COLOR_CARD, fg=config.COLOR_MUTED,
                      font=config.FONT_SMALL).pack(side="left", padx=8)
-            tk.Button(row, text="Modifier", font=config.FONT_SMALL,
+            Button(row, text="Modifier", font=config.FONT_SMALL,
                       bg=config.COLOR_PRIMARY, fg="white", bd=0, padx=8,
                       command=lambda x=d: self._edit(x)).pack(side="right", padx=4, pady=4)
-            tk.Button(row, text="🗑", font=config.FONT_MED, bg=config.COLOR_DANGER,
+            Button(row, text="🗑", font=config.FONT_MED, bg=config.COLOR_DANGER,
                       fg="white", bd=0, width=3,
                       command=lambda i=d["id"], n=d["name"]: self._delete(i, n)
                       ).pack(side="right", padx=4, pady=4)
@@ -226,7 +226,7 @@ class SettingsScreen(tk.Frame):
         hdr.pack(fill="x", padx=10, pady=8)
         tk.Label(hdr, text="Capteurs température", bg=config.COLOR_BG,
                  fg=config.COLOR_FG, font=config.FONT_BIG).pack(side="left")
-        tk.Button(hdr, text="✕", bg=config.COLOR_DANGER, fg="white",
+        Button(hdr, text="✕", bg=config.COLOR_DANGER, fg="white",
                   font=config.FONT_MED, bd=0, padx=12,
                   command=close_top).pack(side="right")
 
@@ -254,7 +254,7 @@ class SettingsScreen(tk.Frame):
                 def pick(sensor=s, devs=devices):
                     _pick_device(top, sensor, devs, render)
 
-                tk.Button(row, text="Assigner", font=config.FONT_SMALL,
+                Button(row, text="Assigner", font=config.FONT_SMALL,
                           bg=config.COLOR_PRIMARY, fg="white", bd=0,
                           padx=8, pady=4,
                           command=pick).pack(side="right", padx=6, pady=6)
@@ -265,7 +265,7 @@ class SettingsScreen(tk.Frame):
                         database.delete_sensor(sensor["id"])
                         render()
 
-                tk.Button(row, text="Suppr", font=config.FONT_SMALL,
+                Button(row, text="Suppr", font=config.FONT_SMALL,
                           bg=config.COLOR_DANGER, fg="white", bd=0,
                           padx=6, pady=4, command=remove
                           ).pack(side="right", padx=(0, 2), pady=6)
@@ -430,7 +430,7 @@ class SettingsScreen(tk.Frame):
                 for dev in devs:
                     already = dev["id"].lower() in existing
                     txt = f"{dev['name']}" + ("   (deja ajoute)" if already else "")
-                    b = tk.Button(pick, text=txt, font=config.FONT_MED,
+                    b = Button(pick, text=txt, font=config.FONT_MED,
                                   bg=config.COLOR_CARD, fg=config.COLOR_FG, bd=0,
                                   padx=12, pady=8,
                                   command=(lambda d=dev: choose(d)))
@@ -438,7 +438,7 @@ class SettingsScreen(tk.Frame):
                         b.config(state="disabled", fg=config.COLOR_MUTED)
                     b.pack(fill="x", padx=16, pady=2)
 
-                tk.Button(pick, text="Annuler", font=config.FONT_SMALL,
+                Button(pick, text="Annuler", font=config.FONT_SMALL,
                           bg=config.COLOR_DANGER, fg="white", bd=0, pady=6,
                           command=close_pick).pack(fill="x", padx=16, pady=(6, 8))
 
@@ -514,13 +514,13 @@ class SettingsScreen(tk.Frame):
                     _add_ble_sensor(dev["mac"])
 
                 for dev in nouveaux:
-                    tk.Button(pick,
+                    Button(pick,
                               text=f"{dev['mac']}   {dev['temp']:.1f}°C",
                               font=config.FONT_MED, bg=config.COLOR_CARD,
                               fg=config.COLOR_FG, bd=0, padx=12, pady=8,
                               command=(lambda d=dev: choose(d))
                               ).pack(fill="x", padx=16, pady=2)
-                tk.Button(pick, text="Annuler", font=config.FONT_SMALL,
+                Button(pick, text="Annuler", font=config.FONT_SMALL,
                           bg=config.COLOR_DANGER, fg="white", bd=0, pady=6,
                           command=pick.destroy).pack(fill="x", padx=16, pady=(6, 8))
 
@@ -534,22 +534,22 @@ class SettingsScreen(tk.Frame):
 
         btn_row = tk.Frame(bottom, bg=config.COLOR_BG)
         btn_row.pack(fill="x")
-        tk.Button(btn_row, text="🔍 Tester",
+        Button(btn_row, text="🔍 Tester",
                   font=config.FONT_MED,
                   bg=config.COLOR_PRIMARY, fg="white", bd=0, padx=12, pady=8,
                   command=read_now).pack(side="left", expand=True, fill="x", padx=(0, 3))
-        tk.Button(btn_row, text="📡 Ajouter BLE",
+        Button(btn_row, text="📡 Ajouter BLE",
                   font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=12, pady=8,
                   command=add_ble).pack(side="left", expand=True, fill="x", padx=3)
-        tk.Button(btn_row, text="⌨ Adresse", font=config.FONT_MED,
+        Button(btn_row, text="⌨ Adresse", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=8,
                   command=add_ble_manual).pack(side="left", padx=(0, 3))
-        tk.Button(btn_row, text="🌐 Ajouter WiFi",
+        Button(btn_row, text="🌐 Ajouter WiFi",
                   font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=12, pady=8,
                   command=add_wifi).pack(side="left", expand=True, fill="x", padx=3)
-        tk.Button(btn_row, text="🔑 Clés", font=config.FONT_MED,
+        Button(btn_row, text="🔑 Clés", font=config.FONT_MED,
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=8,
                   command=ask_tuya_keys).pack(side="left", padx=(3, 0))
         logger.info("ecran capteurs : pret")

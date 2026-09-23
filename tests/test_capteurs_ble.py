@@ -7,6 +7,7 @@ from _harness import setup, cleanup  # noqa: E402
 
 sandbox = setup("ble_")
 from src import config, database  # noqa: E402
+from src.ui_common import est_bouton  # noqa: E402
 
 # --- 1. base neuve : aucun capteur impose ---
 database.init_db()
@@ -43,7 +44,7 @@ root.update()
 
 
 def labels(widget, out):
-    if isinstance(widget, tk.Button):
+    if est_bouton(widget):
         out.append(str(widget.cget("text")))
     for child in widget.winfo_children():
         labels(child, out)

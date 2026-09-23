@@ -105,6 +105,30 @@ le Pi, et il est exclu du dépôt. **Garde cette clé, ne la laisse pas chez un
 client** — le jeton permet de piloter le bot, les clés Tuya donnent accès au
 compte capteurs.
 
+## Style visuel « arrondi »
+
+Deuxième apparence, activable **client par client** sans toucher au code, dans
+`devices/<nom>.json` :
+
+```json
+{ "config": { "STYLE": "rounded" } }
+```
+
+`"classic"` (défaut) : l'apparence d'origine. `"rounded"` : mêmes couleurs, cases
+aux coins arrondis qui **s'enfoncent au toucher** (rebord sombre qui se
+« tasse », contenu compris), sur toute l'appli — menus, boutons, pavé numérique,
+fenêtres de saisie et de confirmation.
+
+- L'action n'est validée qu'au **relâchement sur la case** ; glisser le doigt
+  ailleurs avant de relâcher l'annule.
+- Les grandes cases du menu ont 28 px d'écart et une **zone morte de 12 px** sur
+  le pourtour : un appui qui déborde n'ouvre plus la case voisine.
+- Après chaque changement d'écran, le toucher est ignoré pendant 0,4 s
+  (contact parasite ou second appui impatient).
+- Icône **WiFi** dans l'en-tête du menu : verte connecté, rouge barrée coupé.
+- Essai sur PC : `Essayer sur ce PC.bat` (arrondi) ou `… (ancien style).bat`.
+- `python tests/run_all.py` fait passer chaque test dans **les deux** styles.
+
 ## Essayer l'application sur un PC
 
 Double-cliquer sur **`Essayer sur ce PC.bat`** (ou `python tools/run_pc.py`).
