@@ -78,6 +78,23 @@ def init_db():
             c.execute("ALTER TABLE ble_sensors "
                       "ADD COLUMN kind TEXT NOT NULL DEFAULT 'ble'")
 
+        # Provenance d'un releve : 'manuel' (saisi) ou 'capteur'. Un capteur ne
+        # doit jamais ecraser une valeur saisie a la main. Les releves deja en
+        # base sont consideres comme venant d'un capteur.
+        _ajouter_colonne(c, "readings", "source", "TEXT NOT NULL DEFAULT 'capteur'")
+        # Archivage : un appareil ou un fournisseur retire disparait des listes
+        # mais son historique reste (registre sanitaire, controles).
+        _ajouter_colonne(c, "devices", "archived", "INTEGER NOT NULL DEFAULT 0")
+        _ajouter_colonne(c, "suppliers", "archived", "INTEGER NOT NULL DEFAULT 0")
+        # Temperature maximale acceptee a la reception (vide = pas de controle)
+        _ajouter_colonne(c, "suppliers", "temp_max", "REAL")
+
+
+def _ajouter_colonne(c, table, colonne, definition):
+    cols = [r[1] for r in c.execute(f"PRAGMA table_info({table})").fetchall()]
+    if colonne not in cols:
+        c.execute(f"ALTER TABLE {table} ADD COLUMN {colonne} {definition}")
+
 
 @contextmanager
 def connect():
@@ -93,15 +110,38 @@ def connect():
 
 # ---------- Appareils ----------
 
-def list_devices():
+def list_devices(include_archived=False):
+    """Appareils en service (et aussi les archives si demande)."""
+    sql = "SELECT * FROM devices"
+    if not include_archived:
+        sql += " WHERE archived = 0"
+    with connect() as c:
+        return [dict(r) for r in c.execute(sql + " ORDER BY position, name").fetchall()]
+
+
+def devices_for_period(start: date, end: date):
+    """Appareils a montrer pour une periode passee : ceux en service, plus les
+    archives qui ont des releves sur la periode (l'historique reste complet)."""
     with connect() as c:
         return [dict(r) for r in c.execute(
-            "SELECT * FROM devices ORDER BY position, name"
-        ).fetchall()]
+            """SELECT * FROM devices d
+               WHERE d.archived = 0 OR EXISTS (
+                   SELECT 1 FROM readings r WHERE r.device_id = d.id
+                   AND r.reading_date BETWEEN ? AND ?)
+               ORDER BY d.position, d.name""",
+            (start.isoformat(), end.isoformat())).fetchall()]
 
 
 def add_device(name: str, temp_min: float, temp_max: float):
+    """Ajoute un appareil. S'il en existe un archive du meme nom, il est remis
+    en service (avec les nouveaux seuils) au lieu d'etre duplique."""
     with connect() as c:
+        ancien = c.execute("SELECT id FROM devices WHERE name=? AND archived=1",
+                           (name.strip(),)).fetchone()
+        if ancien:
+            c.execute("UPDATE devices SET archived=0, temp_min=?, temp_max=? WHERE id=?",
+                      (temp_min, temp_max, ancien["id"]))
+            return
         pos = c.execute("SELECT COALESCE(MAX(position), 0) + 1 FROM devices").fetchone()[0]
         c.execute(
             "INSERT INTO devices(name, temp_min, temp_max, position, created_at) VALUES (?,?,?,?,?)",
@@ -117,14 +157,24 @@ def update_device(device_id: int, name: str, temp_min: float, temp_max: float):
         )
 
 
+def archive_device(device_id: int):
+    """Retire un appareil du service sans effacer ses releves. Ses capteurs
+    sont liberes (ils pourront etre assignes a un autre appareil)."""
+    with connect() as c:
+        c.execute("UPDATE devices SET archived=1 WHERE id=?", (device_id,))
+        c.execute("UPDATE ble_sensors SET device_id=NULL WHERE device_id=?", (device_id,))
+
+
 def delete_device(device_id: int):
+    """Suppression definitive, releves compris (assistant de premiere mise en
+    service uniquement : il n'y a pas encore d'historique)."""
     with connect() as c:
         c.execute("DELETE FROM devices WHERE id=?", (device_id,))
 
 
 def devices_count() -> int:
     with connect() as c:
-        return c.execute("SELECT COUNT(*) FROM devices").fetchone()[0]
+        return c.execute("SELECT COUNT(*) FROM devices WHERE archived=0").fetchone()[0]
 
 
 # ---------- Relevés ----------
@@ -138,8 +188,10 @@ def get_reading(device_id: int, reading_date: date):
         return dict(r) if r else None
 
 
-def save_reading(device_id: int, reading_date: date, temperature: float):
-    """Crée ou écrase le relevé du jour pour cet appareil."""
+def save_reading(device_id: int, reading_date: date, temperature: float,
+                 source: str = "manuel"):
+    """Crée ou écrase le relevé du jour pour cet appareil.
+    source : 'manuel' (saisie a l'ecran) ou 'capteur'."""
     now = datetime.now().isoformat()
     with connect() as c:
         existing = c.execute(
@@ -148,15 +200,26 @@ def save_reading(device_id: int, reading_date: date, temperature: float):
         ).fetchone()
         if existing:
             c.execute(
-                "UPDATE readings SET temperature=?, updated_at=? WHERE id=?",
-                (temperature, now, existing["id"]),
+                "UPDATE readings SET temperature=?, updated_at=?, source=? WHERE id=?",
+                (temperature, now, source, existing["id"]),
             )
         else:
             c.execute(
-                "INSERT INTO readings(device_id, reading_date, temperature, created_at, updated_at) "
-                "VALUES (?,?,?,?,?)",
-                (device_id, reading_date.isoformat(), temperature, now, now),
+                "INSERT INTO readings(device_id, reading_date, temperature, created_at, "
+                "updated_at, source) VALUES (?,?,?,?,?,?)",
+                (device_id, reading_date.isoformat(), temperature, now, now, source),
             )
+
+
+def save_sensor_reading(device_id: int, reading_date: date, temperature: float) -> bool:
+    """Enregistre la valeur d'un capteur, SAUF si une valeur a ete saisie a la
+    main ce jour-la : la correction de l'operateur prime. Retourne True si la
+    valeur du capteur a ete enregistree."""
+    existant = get_reading(device_id, reading_date)
+    if existant and existant.get("source") == "manuel":
+        return False
+    save_reading(device_id, reading_date, temperature, source="capteur")
+    return True
 
 
 def readings_in_range(start: date, end: date):
@@ -178,6 +241,7 @@ def last_reading_date_per_device():
         rows = c.execute(
             """SELECT d.id, d.name, MAX(r.reading_date) AS last_date
                FROM devices d LEFT JOIN readings r ON r.device_id = d.id
+               WHERE d.archived = 0
                GROUP BY d.id ORDER BY d.position"""
         ).fetchall()
         return [dict(r) for r in rows]
@@ -212,15 +276,23 @@ def remove_pending_photo_by_path(local_path: str):
 
 # ---------- Fournisseurs ----------
 
-def list_suppliers():
+def list_suppliers(include_archived=False):
+    sql = "SELECT * FROM suppliers"
+    if not include_archived:
+        sql += " WHERE archived = 0"
     with connect() as c:
-        return [dict(r) for r in c.execute(
-            "SELECT * FROM suppliers ORDER BY position, name"
-        ).fetchall()]
+        return [dict(r) for r in c.execute(sql + " ORDER BY position, name").fetchall()]
 
 
 def add_supplier(name: str):
+    """Ajoute un fournisseur ; un fournisseur archive du meme nom est remis en
+    service (avec son historique) au lieu d'etre duplique."""
     with connect() as c:
+        ancien = c.execute("SELECT id FROM suppliers WHERE name=? AND archived=1",
+                           (name.strip(),)).fetchone()
+        if ancien:
+            c.execute("UPDATE suppliers SET archived=0 WHERE id=?", (ancien["id"],))
+            return
         pos = c.execute("SELECT COALESCE(MAX(position), 0) + 1 FROM suppliers").fetchone()[0]
         c.execute(
             "INSERT INTO suppliers(name, position, created_at) VALUES (?,?,?)",
@@ -233,9 +305,23 @@ def update_supplier(supplier_id: int, name: str):
         c.execute("UPDATE suppliers SET name=? WHERE id=?", (name.strip(), supplier_id))
 
 
-def delete_supplier(supplier_id: int):
+def set_supplier_temp_max(supplier_id: int, temp_max):
+    """Temperature maximale acceptee a la reception ; None = pas de controle."""
     with connect() as c:
-        c.execute("DELETE FROM suppliers WHERE id=?", (supplier_id,))
+        c.execute("UPDATE suppliers SET temp_max=? WHERE id=?", (temp_max, supplier_id))
+
+
+def archive_supplier(supplier_id: int):
+    """Retire un fournisseur des listes ; ses receptions restent dans
+    l'historique et les exports (registre sanitaire)."""
+    with connect() as c:
+        c.execute("UPDATE suppliers SET archived=1 WHERE id=?", (supplier_id,))
+
+
+def reception_hors_seuil(reception) -> bool:
+    """Vrai si la temperature relevee depasse le maximum du fournisseur."""
+    tmax = reception.get("supplier_temp_max")
+    return tmax is not None and reception["temperature"] > tmax
 
 
 # ---------- Receptions ----------
@@ -267,7 +353,7 @@ def receptions_on(day: date):
     """Receptions d'une journee, plus recentes en premier."""
     with connect() as c:
         rows = c.execute(
-            """SELECT r.*, s.name AS supplier_name
+            """SELECT r.*, s.name AS supplier_name, s.temp_max AS supplier_temp_max
                FROM receptions r JOIN suppliers s ON s.id = r.supplier_id
                WHERE r.created_at BETWEEN ? AND ?
                ORDER BY r.created_at DESC""",
@@ -280,7 +366,7 @@ def receptions_in_range(start: date, end: date):
     """Receptions entre start et end inclus, plus recentes en premier."""
     with connect() as c:
         rows = c.execute(
-            """SELECT r.*, s.name AS supplier_name
+            """SELECT r.*, s.name AS supplier_name, s.temp_max AS supplier_temp_max
                FROM receptions r JOIN suppliers s ON s.id = r.supplier_id
                WHERE r.created_at BETWEEN ? AND ?
                ORDER BY r.created_at DESC""",
@@ -336,7 +422,13 @@ def get_meta(key: str, default=None):
 
 
 def set_meta(key: str, value: str):
+    """Enregistre une valeur. Rien n'est ecrit si elle n'a pas change : ces
+    valeurs sont mises a jour toutes les 20 secondes, et chaque ecriture use
+    la carte SD."""
     with connect() as c:
+        r = c.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+        if r is not None and r["value"] == value:
+            return
         c.execute(
             "INSERT INTO meta(key, value) VALUES(?,?) "
             "ON CONFLICT(key) DO UPDATE SET value=excluded.value",

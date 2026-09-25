@@ -1,7 +1,8 @@
 """Ecran d'assistant premier lancement : ajouter les appareils."""
 import tkinter as tk
 from . import config, database
-from .ui_common import Button, make_button, text_popup, numpad_popup, info, confirm
+from .ui_common import (Button, ZoneDefilante, make_button, text_popup, numpad_popup,
+                        info, confirm)
 
 
 class SetupWizard(tk.Frame):
@@ -16,21 +17,23 @@ class SetupWizard(tk.Frame):
                  bg=config.COLOR_BG, fg=config.COLOR_MUTED,
                  font=config.FONT_MED).pack(pady=(0, 8))
 
-        self.list_frame = tk.Frame(self, bg=config.COLOR_BG)
-        self.list_frame.pack(fill="both", expand=True, padx=20)
-
+        # Boutons places en premier, en bas : avec beaucoup d'appareils, la
+        # liste defile au lieu de pousser « Terminer » hors de l'ecran.
         actions = tk.Frame(self, bg=config.COLOR_BG)
-        actions.pack(fill="x", padx=20, pady=12)
+        actions.pack(side="bottom", fill="x", padx=20, pady=12)
         make_button(actions, "+ Ajouter un appareil", self._add,
                     bg=config.COLOR_PRIMARY).pack(side="left", expand=True, fill="x", padx=4)
         make_button(actions, "Terminer", self._finish,
                     bg=config.COLOR_SUCCESS).pack(side="right", expand=True, fill="x", padx=4)
 
+        self.liste = ZoneDefilante(self, config.COLOR_BG)
+        self.liste.pack(fill="both", expand=True, padx=20)
+        self.list_frame = self.liste.interieur
+
         self._render()
 
     def _render(self):
-        for w in self.list_frame.winfo_children():
-            w.destroy()
+        self.liste.vider()
         devices = database.list_devices()
         if not devices:
             tk.Label(self.list_frame, text="(aucun appareil)", bg=config.COLOR_BG,
@@ -48,6 +51,7 @@ class SetupWizard(tk.Frame):
                       fg="white", bd=0, width=3,
                       command=lambda i=d["id"], n=d["name"]: self._delete(i, n)
                       ).pack(side="right", padx=8, pady=6)
+        self.liste.actualiser()
 
     def _add(self):
         name = text_popup(self, "Nom de l'appareil")

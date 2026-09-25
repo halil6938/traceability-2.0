@@ -5,8 +5,35 @@ import tkinter as tk
 from datetime import date, datetime
 
 from . import config, database, ble_thermo
-from .ui_common import (Button, text_popup, numpad_popup, confirm, error,
-                        open_modal, close_modal)
+from .ui_common import (Button, ZoneDefilante, text_popup, numpad_popup, confirm,
+                        error, open_modal, close_modal)
+
+# Au-dela, les boutons fournisseurs ne remplissent plus l'ecran : ils gardent
+# une hauteur confortable et la liste defile.
+MAX_FOURNISSEURS_SANS_DEFILEMENT = 12
+
+
+def _libelle_seuil(supplier):
+    tmax = supplier.get("temp_max")
+    return f"max {tmax:g}°C" if tmax is not None else "pas de seuil"
+
+
+def _demander_seuil(parent, supplier_name, actuel=None):
+    """Temperature maximale acceptee a la reception. Retourne (change, valeur) :
+    Annuler -> (False, None) ; OK sur un champ vide -> (True, None) = pas de
+    controle ; sinon (True, valeur)."""
+    initial = f"{actuel:g}" if actuel is not None else ""
+    v = numpad_popup(parent, f"{supplier_name} : temp. max acceptée (°C)\n"
+                     "(vide = pas de contrôle)", initial=initial)
+    if v is None:
+        return False, None
+    if v.strip() in ("", "-"):
+        return True, None
+    try:
+        return True, float(v)
+    except ValueError:
+        error(parent, "Erreur", "Température invalide.")
+        return False, None
 
 
 class ReceptionScreen(tk.Frame):
@@ -74,6 +101,7 @@ class ReceptionScreen(tk.Frame):
     def _start_conn(self):
         """Demarre la liaison persistante au pistolet (si MAC configuree)."""
         mac = database.get_meta("reception_thermo_mac", "")
+        self._mac = mac               # lu une fois (et non toutes les 0,5 s)
         if mac and ble_thermo.HAS_BLEAK:
             self.conn = ble_thermo.ThermoConnection(mac)
             self.conn.start()
@@ -94,8 +122,7 @@ class ReceptionScreen(tk.Frame):
         if self._suspended:
             txt, color = "🌡 Pistolet en pause", config.COLOR_MUTED
         elif self.conn is None:
-            mac = database.get_meta("reception_thermo_mac", "")
-            if not mac:
+            if not self._mac:
                 txt, color = "🌡 Pistolet non configuré", config.COLOR_MUTED
             else:
                 txt, color = "🌡 Bluetooth indisponible", config.COLOR_DANGER
@@ -186,16 +213,28 @@ class ReceptionScreen(tk.Frame):
                      font=config.FONT_MED, justify="center").pack(pady=40)
             return
         cols = 2
+        if len(suppliers) > MAX_FOURNISSEURS_SANS_DEFILEMENT:
+            zone = ZoneDefilante(self.suppliers_frame, config.COLOR_BG)
+            zone.pack(fill="both", expand=True)
+            grille = zone.interieur
+        else:
+            zone, grille = None, tk.Frame(self.suppliers_frame, bg=config.COLOR_BG)
+            grille.pack(fill="both", expand=True)
         for col in range(cols):
-            self.suppliers_frame.columnconfigure(col, weight=1)
+            grille.columnconfigure(col, weight=1)
         for i, s in enumerate(suppliers):
-            self.suppliers_frame.rowconfigure(i // cols, weight=1)
-            Button(self.suppliers_frame, text=s["name"], font=config.FONT_BIG,
+            if zone is None:
+                grille.rowconfigure(i // cols, weight=1)
+            # un nom long passe en plus petit plutot que d'etre coupe en plein mot
+            police = config.FONT_BIG if len(s["name"]) <= 11 else config.FONT_MED
+            Button(grille, text=s["name"], font=police,
                       bg=config.COLOR_PRIMARY, fg="white", bd=0,
-                      wraplength=200,
+                      wraplength=200, pady=14 if zone is not None else None,
                       command=lambda x=s: self._measure(x)
                       ).grid(row=i // cols, column=i % cols,
                              sticky="nsew", padx=4, pady=4)
+        if zone is not None:
+            zone.actualiser()
 
     def _render_today(self):
         for w in self.today_frame.winfo_children():
@@ -219,9 +258,11 @@ class ReceptionScreen(tk.Frame):
                       bg=config.COLOR_DANGER, fg="white", bd=0, width=3,
                       command=lambda x=r: self._delete_reception(x)
                       ).pack(side="right", padx=(4, 6), pady=2)
-            tk.Label(line, text=f"{r['temperature']:.1f}°C", bg=config.COLOR_BG,
-                     fg=config.COLOR_SUCCESS, font=config.FONT_SMALL
-                     ).pack(side="right", padx=6)
+            hors = database.reception_hors_seuil(r)
+            tk.Label(line, text=("⚠ " if hors else "") + f"{r['temperature']:.1f}°C",
+                     bg=config.COLOR_BG,
+                     fg=config.COLOR_DANGER if hors else config.COLOR_SUCCESS,
+                     font=config.FONT_SMALL).pack(side="right", padx=6)
 
     def _delete_reception(self, r):
         heure = datetime.fromisoformat(r["created_at"]).strftime("%H:%M")
@@ -248,17 +289,26 @@ class ReceptionScreen(tk.Frame):
         status.pack()
 
         temp_var = tk.StringVar(value="--.- °C")
-        tk.Label(top, textvariable=temp_var, bg=config.COLOR_BG,
-                 fg=config.COLOR_FG, font=("DejaVu Sans", 40, "bold")
-                 ).pack(pady=8)
+        temp_lbl = tk.Label(top, textvariable=temp_var, bg=config.COLOR_BG,
+                            fg=config.COLOR_FG, font=("DejaVu Sans", 40, "bold"))
+        temp_lbl.pack(pady=8)
 
         state = {"temp": None, "closed": False, "after_id": None}
         conn = self.conn
+        tmax = supplier.get("temp_max")
 
         def set_temp(t):
             state["temp"] = t
             temp_var.set(f"{t:.1f} °C")
             save_btn.config(state="normal", bg=config.COLOR_SUCCESS)
+            if tmax is not None and t > tmax:
+                # au-dessus du maximum du fournisseur : on previent, l'operateur
+                # decide (refus du produit, ou enregistrement tel quel)
+                temp_lbl.config(fg=config.COLOR_DANGER)
+                status_var.set(f"⚠ Au-dessus du maximum accepté ({tmax:g} °C)")
+                status.config(fg=config.COLOR_DANGER)
+            else:
+                temp_lbl.config(fg=config.COLOR_FG)
 
         # La liaison au pistolet est deja ouverte. On NE capture PAS les
         # relevés d'ambiance epars : on detecte la GACHETTE par la cadence des
@@ -292,9 +342,9 @@ class ReceptionScreen(tk.Frame):
             elif burst["active"] and burst["last"] and (now - burst["last"]) > GAP:
                 # fin de rafale = gachette relachee -> on fige la valeur
                 burst["active"] = False
-                set_temp(burst["temp"])
                 status_var.set("✓ Mesure prête — Enregistrer, ou visez à nouveau.")
                 status.config(fg=config.COLOR_SUCCESS)
+                set_temp(burst["temp"])
             elif state["temp"] is None and not burst["active"]:
                 if conn.status == ble_thermo.ST_CONNECTED:
                     status_var.set("Visez le produit et appuyez sur la gâchette.")
@@ -374,12 +424,14 @@ class ReceptionScreen(tk.Frame):
                   font=config.FONT_MED, bd=0, padx=12,
                   command=close_mgr).pack(side="right")
 
-        body = tk.Frame(top, bg=config.COLOR_BG)
-        body.pack(fill="both", expand=True, padx=10)
+        # liste qui defile, packee apres les boutons du bas (voir plus loin) :
+        # avant, des 7 fournisseurs, « + Ajouter » et « Pistolet BLE »
+        # sortaient de la fenetre
+        liste = ZoneDefilante(top, config.COLOR_BG)
+        body = liste.interieur
 
         def render():
-            for w_ in body.winfo_children():
-                w_.destroy()
+            liste.vider()
             suppliers = database.list_suppliers()
             if not suppliers:
                 tk.Label(body, text="(aucun fournisseur)", bg=config.COLOR_BG,
@@ -387,25 +439,30 @@ class ReceptionScreen(tk.Frame):
             for s in suppliers:
                 row = tk.Frame(body, bg=config.COLOR_CARD)
                 row.pack(fill="x", pady=3)
-                tk.Label(row, text=s["name"], bg=config.COLOR_CARD,
-                         fg=config.COLOR_FG, font=config.FONT_MED, anchor="w"
-                         ).pack(side="left", padx=12, pady=8, expand=True, fill="x")
 
                 def edit(sup=s):
                     name = text_popup(top, "Nom du fournisseur", initial=sup["name"])
-                    if name:
+                    if not name:
+                        return
+                    try:
                         database.update_supplier(sup["id"], name)
-                        render()
-                        self._render_suppliers()
+                    except Exception:
+                        error(top, "Erreur", f"Le nom « {name} » est déjà utilisé "
+                              "(éventuellement par un fournisseur retiré).")
+                        return
+                    change, valeur = _demander_seuil(top, name, sup.get("temp_max"))
+                    if change:
+                        database.set_supplier_temp_max(sup["id"], valeur)
+                    render()
+                    self._render_suppliers()
 
                 def remove(sup=s):
-                    if confirm(top, "Supprimer",
-                               f"Supprimer '{sup['name']}' ?\n"
-                               "Ses relevés de réception seront aussi supprimés."):
-                        database.delete_supplier(sup["id"])
+                    if confirm(top, "Retirer",
+                               f"Retirer '{sup['name']}' de la liste ?\n"
+                               "Ses relevés restent dans l'historique."):
+                        database.archive_supplier(sup["id"])
                         render()
                         self._render_suppliers()
-                        self._render_today()
 
                 Button(row, text="Modifier", font=config.FONT_SMALL,
                           bg=config.COLOR_PRIMARY, fg="white", bd=0, padx=8,
@@ -413,11 +470,19 @@ class ReceptionScreen(tk.Frame):
                 Button(row, text="🗑", font=config.FONT_MED, bg=config.COLOR_DANGER,
                           fg="white", bd=0, width=3,
                           command=remove).pack(side="right", padx=4, pady=4)
+                tk.Label(row, text=_libelle_seuil(s), bg=config.COLOR_CARD,
+                         fg=config.COLOR_MUTED, font=config.FONT_SMALL
+                         ).pack(side="right", padx=6)
+                tk.Label(row, text=s["name"], bg=config.COLOR_CARD,
+                         fg=config.COLOR_FG, font=config.FONT_MED, anchor="w"
+                         ).pack(side="left", padx=12, pady=8, expand=True, fill="x")
+            liste.actualiser()
 
         render()
 
         bottom = tk.Frame(top, bg=config.COLOR_BG)
-        bottom.pack(fill="x", padx=10, pady=8)
+        bottom.pack(side="bottom", fill="x", padx=10, pady=8)
+        liste.pack(fill="both", expand=True, padx=10)
 
         def add():
             name = text_popup(top, "Nom du fournisseur")
@@ -425,9 +490,15 @@ class ReceptionScreen(tk.Frame):
                 return
             try:
                 database.add_supplier(name)
-            except Exception as e:
-                error(top, "Erreur", str(e))
+            except Exception:
+                error(top, "Erreur", f"Le fournisseur « {name} » existe déjà.")
                 return
+            nouveau = next((x for x in database.list_suppliers()
+                            if x["name"] == name.strip()), None)
+            if nouveau is not None:
+                change, valeur = _demander_seuil(top, name, nouveau.get("temp_max"))
+                if change:
+                    database.set_supplier_temp_max(nouveau["id"], valeur)
             render()
             self._render_suppliers()
 

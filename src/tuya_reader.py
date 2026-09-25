@@ -14,10 +14,11 @@ NB : le plan gratuit Tuya (« Trial ») expire tous les 6 mois — le
 renouveler en 2 clics sur iot.tuya.com si les lectures echouent en
 erreur d'autorisation.
 """
-import logging
+import json
 import time
 
-from . import config, database
+from . import database
+from .journal import journal
 
 # Codes de temperature, par ordre de preference : la sonde filaire externe
 # d'abord (celle placee dans le frigo), sinon le capteur interne du boitier.
@@ -33,12 +34,7 @@ try:
 except ImportError:
     HAS_TINYTUYA = False
 
-logger = logging.getLogger(__name__)
-if not logger.handlers:
-    _h = logging.FileHandler(config.LOG_DIR / "tuya.log")
-    _h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-    logger.addHandler(_h)
-    logger.setLevel(logging.INFO)
+logger = journal(__name__, "tuya.log")
 
 
 def get_creds():
@@ -91,6 +87,9 @@ def read_temperatures(device_ids, creds=None, max_age_s=MAX_AGE_S):
     cloud = _cloud(creds)
     results = {}
     now_ms = time.time() * 1000.0
+    # Piles faibles : memorisees pour etre signalees a l'ecran (menu principal),
+    # pas seulement dans ce journal que personne ne lit.
+    faibles = set(json.loads(database.get_meta("capteurs_pile_faible", "") or "[]"))
     for did in device_ids:
         try:
             r = cloud.cloudrequest(f"/v2.0/cloud/thing/{did}/shadow/properties",
@@ -107,6 +106,9 @@ def read_temperatures(device_ids, creds=None, max_age_s=MAX_AGE_S):
         battery = props.get("battery_state", {}).get("value")
         if battery == "low":
             logger.warning("pile faible sur le capteur %s", did)
+            faibles.add(did.lower())
+        elif battery is not None:
+            faibles.discard(did.lower())
 
         for code in TEMP_CODES:
             p = props.get(code)
@@ -126,4 +128,5 @@ def read_temperatures(device_ids, creds=None, max_age_s=MAX_AGE_S):
             logger.info("cloud %s : %s = %.1f C (age %.0f s)",
                         did, code, temp, age or -1)
             break
+    database.set_meta("capteurs_pile_faible", json.dumps(sorted(faibles)))
     return results

@@ -15,21 +15,16 @@ presents dans l'image SD, communs a tous les Pi). A configurer une fois avec
 Seuls le nom du magasin et la version sont transmis — aucune donnee client.
 """
 import json
-import logging
 import urllib.parse
 import urllib.request
 from datetime import date, datetime
 
 from . import config, database
+from .journal import journal
 
 API = "https://api.telegram.org/bot{token}/sendMessage"
 
-logger = logging.getLogger(__name__)
-if not logger.handlers:
-    _h = logging.FileHandler(config.LOG_DIR / "heartbeat.log")
-    _h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-    logger.addHandler(_h)
-    logger.setLevel(logging.INFO)
+logger = journal(__name__, "heartbeat.log")
 
 
 def get_creds():

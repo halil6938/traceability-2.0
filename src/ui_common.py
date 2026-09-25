@@ -21,6 +21,39 @@ from . import config, ui_rounded
 _OPEN_MODALS = []
 
 
+# Minuteurs des ecrans fermes. widget.after() enregistre une commande que Tk
+# supprime avec le widget : si le minuteur n'avait pas encore sonne, Tk tente
+# ensuite d'appeler une commande disparue et ecrit « invalid command name »
+# dans le journal systeme — a chaque changement d'ecran. On annule donc les
+# minuteurs d'un widget au moment ou il est detruit.
+_after_origine = tk.Misc.after
+_destroy_origine = tk.BaseWidget.destroy
+
+
+def _after(self, ms, func=None, *args):
+    ident = _after_origine(self, ms, func, *args)
+    if func is not None:
+        attente = self.__dict__.setdefault("_minuteurs", [])
+        attente.append(ident)
+        if len(attente) > 64:           # oublier ceux qui ont deja sonne
+            encore = set(self.tk.splitlist(self.tk.call("after", "info")))
+            attente[:] = [i for i in attente if i in encore]
+    return ident
+
+
+def _destroy(self):
+    for ident in self.__dict__.pop("_minuteurs", ()):
+        try:
+            self.after_cancel(ident)
+        except (tk.TclError, ValueError):
+            pass
+    _destroy_origine(self)
+
+
+tk.Misc.after = _after
+tk.BaseWidget.destroy = _destroy
+
+
 class WifiIcon(tk.Canvas):
     """Icone WiFi : verte connecte, rouge barree deconnecte, grise inconnu."""
 
@@ -64,8 +97,12 @@ def install_tap_guard(screen, seconds=0.4):
     global _guard_until
     _guard_until = time.time() + seconds
     root = screen.winfo_toplevel()
-    root.bind_class(_TAP_TAG, "<ButtonPress-1>", _swallow)
-    root.bind_class(_TAP_TAG, "<ButtonRelease-1>", _swallow)
+    if not getattr(root, "_tap_guard_pret", False):
+        # une seule fois : chaque bind_class enregistre une commande Tk jamais
+        # liberee, qui s'accumulerait a chaque changement d'ecran
+        root.bind_class(_TAP_TAG, "<ButtonPress-1>", _swallow)
+        root.bind_class(_TAP_TAG, "<ButtonRelease-1>", _swallow)
+        root._tap_guard_pret = True
 
     def poser(w):
         tags = w.bindtags()
@@ -75,45 +112,104 @@ def install_tap_guard(screen, seconds=0.4):
             poser(enfant)
 
     poser(screen)
+    # Un nouvel ecran se place au-dessus de tout : verrouillage, alerte et
+    # veille doivent repasser devant lui (sinon un retour automatique au menu
+    # rendrait l'appli utilisable malgre le verrouillage).
+    relever = getattr(root, "relever_voiles", None)
+    if relever is not None:
+        relever()
 
 
-def bind_drag_scroll(canvas, container=None):
+def bind_drag_scroll(canvas, container=None, horizontal=False):
     """Permet de faire defiler `canvas` en glissant le doigt n'importe ou sur
     son contenu, pas seulement sur la barre laterale (trop etroite au doigt).
     Le glissement suit exactement le doigt (pas de scroll par a-coups).
 
-    Parcourt `container` (par defaut canvas lui-meme) et se pose sur chaque
-    widget rencontre, SAUF les boutons : demarrer un glissement sur un
-    bouton ne doit jamais faire defiler a sa place, pour ne pas gener un
-    appui. A rappeler apres chaque reconstruction du contenu (nouvelles
-    lignes), les widgets precedents n'existant plus."""
-    etat = {"y": 0}
+    Se pose sur le canevas et tout ce qu'il contient, SAUF les boutons :
+    demarrer un glissement sur un bouton ne doit jamais faire defiler a sa
+    place, pour ne pas gener un appui. A rappeler apres chaque reconstruction
+    du contenu : seuls les widgets nouveaux sont equipes (un widget deja
+    equipe ne l'est pas deux fois, sinon le defilement s'accelererait)."""
+    etat = {"x": 0, "y": 0}
 
     def presser(event):
-        etat["y"] = event.y_root
+        etat["x"], etat["y"] = event.x_root, event.y_root
 
     def glisser(event):
         bbox = canvas.bbox("all")
         if bbox is None:
             return
-        hauteur_totale = bbox[3] - bbox[1]
-        hauteur_visible = canvas.winfo_height()
-        if hauteur_totale <= hauteur_visible:
-            return
-        delta = event.y_root - etat["y"]
-        etat["y"] = event.y_root
-        haut, _ = canvas.yview()
-        frac = haut - delta / hauteur_totale
-        canvas.yview_moveto(max(0.0, min(1.0, frac)))
+        dx, dy = event.x_root - etat["x"], event.y_root - etat["y"]
+        etat["x"], etat["y"] = event.x_root, event.y_root
+        hauteur = bbox[3] - bbox[1]
+        if hauteur > canvas.winfo_height():
+            haut, _ = canvas.yview()
+            canvas.yview_moveto(max(0.0, min(1.0, haut - dy / hauteur)))
+        largeur = bbox[2] - bbox[0]
+        if horizontal and largeur > canvas.winfo_width():
+            gauche, _ = canvas.xview()
+            canvas.xview_moveto(max(0.0, min(1.0, gauche - dx / largeur)))
 
     def poser(widget):
-        widget.bind("<ButtonPress-1>", presser, add="+")
-        widget.bind("<B1-Motion>", glisser, add="+")
+        if not getattr(widget, "_glissement", False):
+            widget.bind("<ButtonPress-1>", presser, add="+")
+            widget.bind("<B1-Motion>", glisser, add="+")
+            widget._glissement = True
         for enfant in widget.winfo_children():
             if not est_bouton(enfant):
                 poser(enfant)
 
-    poser(container if container is not None else canvas)
+    poser(canvas)
+    if container is not None and container.master is not canvas:
+        poser(container)
+
+
+class ZoneDefilante(tk.Frame):
+    """Liste qui defile (au doigt ou par la barre) : ce qui ne tient pas a
+    l'ecran reste accessible au lieu d'etre rogne. Les lignes se placent dans
+    .interieur ; appeler .actualiser() apres chaque reconstruction.
+
+    Le canevas demande une hauteur minime : la zone prend la place restante
+    sans jamais pousser hors de l'ecran les boutons places en dessous (a
+    condition de packer ces boutons AVANT la zone, cote « bottom »)."""
+
+    def __init__(self, parent, bg, horizontal=False):
+        super().__init__(parent, bg=bg)
+        self._horizontal = horizontal
+        self.canvas = tk.Canvas(self, bg=bg, highlightthickness=0,
+                                width=40, height=40)
+        self.barre = tk.Scrollbar(self, orient="vertical",
+                                  command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=self.barre.set)
+        if horizontal:
+            self.barre_h = tk.Scrollbar(self, orient="horizontal",
+                                        command=self.canvas.xview)
+            self.canvas.configure(xscrollcommand=self.barre_h.set)
+            self.barre_h.pack(side="bottom", fill="x")
+        self.barre.pack(side="right", fill="y")
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.interieur = tk.Frame(self.canvas, bg=bg)
+        self._fenetre = self.canvas.create_window((0, 0), window=self.interieur,
+                                                  anchor="nw")
+        self.interieur.bind("<Configure>", lambda e: self._region())
+        self.canvas.bind("<Configure>", self._taille)
+
+    def _taille(self, event):
+        if not self._horizontal:        # les lignes occupent toute la largeur
+            self.canvas.itemconfigure(self._fenetre, width=event.width)
+        self._region()
+
+    def _region(self):
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def vider(self):
+        for w in self.interieur.winfo_children():
+            w.destroy()
+        self.canvas.yview_moveto(0)
+        self.canvas.xview_moveto(0)
+
+    def actualiser(self):
+        bind_drag_scroll(self.canvas, horizontal=self._horizontal)
 
 
 def schedule_auto_return(widget, seconds, back_fn, _tick_ms=10_000):
@@ -127,7 +223,7 @@ def schedule_auto_return(widget, seconds, back_fn, _tick_ms=10_000):
     def tick():
         if not widget.winfo_exists():
             return
-        if not _OPEN_MODALS and widget.winfo_toplevel().seconds_idle() > seconds:
+        if not modales_ouvertes() and widget.winfo_toplevel().seconds_idle() > seconds:
             back_fn()
             return
         widget.after(_tick_ms, tick)
@@ -149,6 +245,26 @@ def open_modal(parent, w, h, color=None):
     panel._veil = veil
     _OPEN_MODALS.append(panel)
     return panel
+
+
+def ajuster_modal(panel):
+    """Agrandit le panneau si son contenu ne tient pas (police plus grande que
+    celle du Pi, titre sur deux lignes...), sans jamais depasser l'ecran. A
+    appeler une fois le contenu construit."""
+    panel.update_idletasks()
+    infos = panel.place_info()
+    w = max(int(float(infos.get("width") or 0)), panel.winfo_reqwidth())
+    h = max(int(float(infos.get("height") or 0)), panel.winfo_reqheight())
+    panel.place_configure(width=min(w, config.SCREEN_W - 4),
+                          height=min(h, config.SCREEN_H - 4))
+
+
+def modales_ouvertes():
+    """Panneaux superposes encore affiches. Ceux qui ont disparu entre-temps
+    (detruits avec leur ecran) sont oublies : un panneau fantome suspendrait
+    sinon pour toujours le retour automatique au menu."""
+    _OPEN_MODALS[:] = [p for p in _OPEN_MODALS if p.winfo_exists()]
+    return _OPEN_MODALS
 
 
 def close_modal(panel):
@@ -202,10 +318,12 @@ def style_popup(top, color=None):
 
 def numpad_popup(parent, title="Saisie", initial="", allow_negative=True, allow_decimal=True):
     """Clavier numerique tactile modal. Retourne la chaine saisie ou None."""
-    top = open_modal(parent, 340, 360)
+    # un peu plus haut si le titre tient sur deux lignes
+    top = open_modal(parent, 340, 385 if "\n" in title else 360)
 
     tk.Label(top, text=title, bg=config.COLOR_BG, fg=config.COLOR_FG,
-             font=config.FONT_MED).pack(pady=(10, 4))
+             font=config.FONT_MED, wraplength=320,
+             justify="center").pack(pady=(10, 4))
 
     value = tk.StringVar(value=initial)
     entry = tk.Label(top, textvariable=value, bg=config.COLOR_CARD, fg=config.COLOR_FG,
@@ -257,13 +375,16 @@ def numpad_popup(parent, title="Saisie", initial="", allow_negative=True, allow_
     def cancel():
         close_modal(top)
 
+    # OK / Annuler places AVANT les touches dans l'ordre de placement : si la
+    # place manque, ce sont les touches qui se resserrent, jamais ces boutons
     btns = tk.Frame(top, bg=config.COLOR_BG)
-    btns.pack(pady=8, fill="x", padx=12)
+    btns.pack(side="bottom", pady=8, fill="x", padx=12, before=grid)
     Button(btns, text="Annuler", font=config.FONT_MED, bg=config.COLOR_CARD,
               fg=config.COLOR_FG, bd=0, command=cancel).pack(side="left", expand=True, fill="x", padx=4, ipady=8)
     Button(btns, text="OK", font=config.FONT_MED, bg=config.COLOR_SUCCESS,
               fg="white", bd=0, command=ok).pack(side="right", expand=True, fill="x", padx=4, ipady=8)
 
+    ajuster_modal(top)
     parent.wait_window(top)
     return result["v"]
 
@@ -289,6 +410,7 @@ def text_popup(parent, title="Saisie", initial=""):
         list("QSDFGHJKLM"),
         list("WXCVBN0123"),
         list("456789-_ /"),
+        list("ÉÈÊÀÇ'&.,:"),     # accents, apostrophe, et « : » des adresses MAC
     ]
 
     # Grille a colonnes de poids egal : remplit exactement la largeur de la fenetre
@@ -296,6 +418,8 @@ def text_popup(parent, title="Saisie", initial=""):
     grid.pack(fill="x", padx=4, pady=2)
     for col in range(10):
         grid.columnconfigure(col, weight=1)
+
+    touches = []
 
     def press(ch):
         value.set(value.get() + (ch if upper[0] else ch.lower()))
@@ -305,13 +429,19 @@ def text_popup(parent, title="Saisie", initial=""):
 
     def toggle_case():
         upper[0] = not upper[0]
+        # les touches montrent ce qu'elles ecriront, et Maj montre son etat
+        for bouton, ch in touches:
+            bouton.config(text=ch if upper[0] else ch.lower())
+        maj.config(bg=config.COLOR_PRIMARY if upper[0] else config.COLOR_CARD,
+                   fg="white" if upper[0] else config.COLOR_FG)
 
     for r, row in enumerate(keyboard):
         for c, ch in enumerate(row):
-            Button(grid, text=ch, font=config.FONT_SMALL,
-                      bg=config.COLOR_CARD, fg=config.COLOR_FG, bd=0,
-                      command=lambda x=ch: press(x)
-                      ).grid(row=r, column=c, sticky="ew", padx=1, pady=2, ipady=7)
+            bouton = Button(grid, text=ch.lower(), font=config.FONT_SMALL,
+                            bg=config.COLOR_CARD, fg=config.COLOR_FG, bd=0,
+                            command=lambda x=ch: press(x))
+            bouton.grid(row=r, column=c, sticky="ew", padx=1, pady=1, ipady=5)
+            touches.append((bouton, ch))
 
     # Barre Espace / Maj / Suppr — meme principe grid a 3 colonnes proportionnelles
     actions = tk.Frame(top, bg=config.COLOR_BG)
@@ -322,15 +452,15 @@ def text_popup(parent, title="Saisie", initial=""):
     Button(actions, text="Espace", font=config.FONT_SMALL,
               bg=config.COLOR_CARD, fg=config.COLOR_FG, bd=0,
               command=lambda: press(" ")
-              ).grid(row=0, column=0, sticky="ew", padx=1, pady=2, ipady=9)
-    Button(actions, text="Maj ⇧", font=config.FONT_SMALL,
-              bg=config.COLOR_CARD, fg=config.COLOR_FG, bd=0,
-              command=toggle_case
-              ).grid(row=0, column=1, sticky="ew", padx=1, pady=2, ipady=9)
+              ).grid(row=0, column=0, sticky="ew", padx=1, pady=2, ipady=7)
+    maj = Button(actions, text="Maj ⇧", font=config.FONT_SMALL,
+                 bg=config.COLOR_CARD, fg=config.COLOR_FG, bd=0,
+                 command=toggle_case)
+    maj.grid(row=0, column=1, sticky="ew", padx=1, pady=2, ipady=7)
     Button(actions, text="⌫", font=config.FONT_SMALL,
               bg=config.COLOR_DANGER, fg="white", bd=0,
               command=backspace
-              ).grid(row=0, column=2, sticky="ew", padx=1, pady=2, ipady=9)
+              ).grid(row=0, column=2, sticky="ew", padx=1, pady=2, ipady=7)
 
     result = {"v": None}
 
@@ -339,7 +469,7 @@ def text_popup(parent, title="Saisie", initial=""):
         close_modal(top)
 
     btns = tk.Frame(top, bg=config.COLOR_BG)
-    btns.pack(pady=6, fill="x", padx=8)
+    btns.pack(side="bottom", pady=6, fill="x", padx=8, before=grid)
     Button(btns, text="Annuler", font=config.FONT_MED, bg=config.COLOR_CARD,
               fg=config.COLOR_FG, bd=0, command=lambda: close_modal(top)
               ).pack(side="left", expand=True, fill="x", padx=4, ipady=8)
@@ -347,6 +477,7 @@ def text_popup(parent, title="Saisie", initial=""):
               fg="white", bd=0, command=ok
               ).pack(side="right", expand=True, fill="x", padx=4, ipady=8)
 
+    ajuster_modal(top)
     parent.wait_window(top)
     return result["v"]
 
@@ -360,14 +491,14 @@ def _dialog(parent, title, msg, color, buttons):
 
     tk.Label(top, text=title, bg=config.COLOR_BG, fg=config.COLOR_FG,
              font=config.FONT_BIG).pack(pady=(18, 6))
-    tk.Label(top, text=msg, bg=config.COLOR_BG, fg=config.COLOR_MUTED,
-             font=config.FONT_MED, wraplength=380, justify="center"
-             ).pack(pady=4, expand=True)
+    message = tk.Label(top, text=msg, bg=config.COLOR_BG, fg=config.COLOR_MUTED,
+                       font=config.FONT_MED, wraplength=380, justify="center")
+    message.pack(pady=4, expand=True)
 
     result = {"v": buttons[0][1]}  # valeur du 1er bouton si fermeture forcee
 
     btns = tk.Frame(top, bg=config.COLOR_BG)
-    btns.pack(side="bottom", fill="x", padx=12, pady=12)
+    btns.pack(side="bottom", fill="x", padx=12, pady=12, before=message)
 
     def choose(v):
         result["v"] = v
@@ -378,6 +509,7 @@ def _dialog(parent, title, msg, color, buttons):
                   bd=0, command=lambda v=val: choose(v)
                   ).pack(side="left", expand=True, fill="x", padx=4, ipady=10)
 
+    ajuster_modal(top)
     parent.wait_window(top)
     return result["v"]
 

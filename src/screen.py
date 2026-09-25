@@ -8,17 +8,11 @@ Toutes sont « au mieux » : un echec n'empeche rien, l'appli affiche de toute
 facon un voile noir qui masque l'ecran et absorbe le premier contact.
 """
 import glob
-import logging
 import subprocess
 
-from . import config
+from .journal import journal
 
-logger = logging.getLogger(__name__)
-if not logger.handlers:
-    _h = logging.FileHandler(config.LOG_DIR / "screen.log")
-    _h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-    logger.addHandler(_h)
-    logger.setLevel(logging.INFO)
+logger = journal(__name__, "screen.log")
 
 
 def _run(args):

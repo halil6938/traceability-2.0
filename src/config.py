@@ -40,11 +40,20 @@ RECT_ABSENT_FRAMES = 8            # apres une photo, frames consecutifs SANS
                                   # etiquette avant de réarmer (laisse le
                                   # temps de retirer le ticket)
 SCAN_INACTIVITY_S = 180           # retour auto au menu si aucune etiquette
+                                  # detectee pendant ce delai (mode scan)
 HISTORY_INACTIVITY_S = 180        # retour auto au menu si aucun contact (Historique)
 SETTINGS_INACTIVITY_S = 180       # retour auto au menu si aucun contact (Parametres)
-                                  # detectee pendant ce delai (mode scan)
+# La nuit, retour au menu de n'importe quel ecran apres ce delai sans contact :
+# un ecran Reception ou Releve laisse ouvert bloquerait sinon le releve
+# automatique de 3 h (Bluetooth reserve) et les mises a jour.
+NUIT_HEURES = (22, 5)             # de 22 h a 5 h
+NUIT_INACTIVITE_S = 1800          # 30 min
 SCREEN_OFF_S = 300                # veille de l'ecran apres ce delai sans
                                   # contact (0 = jamais de veille)
+
+# Nom du magasin imprime sur les PDF (vide = nom de la machine).
+# Reglable a distance : "NOM_MAGASIN": "Boucherie de St Priest".
+NOM_MAGASIN = ""
 
 # Retention photos (6 mois)
 PHOTO_RETENTION_DAYS = 180

@@ -231,7 +231,8 @@ def build(path):
     st.append(Paragraph("<b>c) La reception</b> "
                         "(Reception &gt; Fournisseurs)", S_BODY))
     st.append(steps([
-        "Saisir les fournisseurs du client.",
+        "Saisir les fournisseurs du client, avec si besoin la <b>temperature "
+        "maximale acceptee</b> (une livraison au-dessus s'affiche en rouge).",
         "<b>Pistolet BLE</b> puis <b>Detecter</b> : appuyer sur la gachette "
         "pendant la recherche. La MAC peut aussi etre saisie a la main."]))
     st.append(Spacer(1, 3))
@@ -252,14 +253,16 @@ def build(path):
     st.append(steps([
         "Sur GitHub, dossier <b>devices/</b>, creer le fichier "
         "<b>&lt;nom-du-client&gt;.json</b> en copiant _modele.json :"]))
-    st.append(code('{ "locked": false, "message": "", "config": {}, '
-                   '"update": "auto" }'))
+    st.append(code('{ "locked": false, "message": "", "update": "auto",',
+                   '  "config": { "NOM_MAGASIN": "Boucherie Durand" } }'))
     st.append(steps([
         "Pour bloquer ce client : passer <b>locked</b> a true et ecrire un "
         "message. Effet en 20 secondes environ ; le blocage resiste au "
         "redemarrage et a une coupure internet.",
         "<b>update</b> : auto (mises a jour la nuit, recommande), now "
-        "(immediat) ou off (fige la version)."]))
+        "(immediat) ou off (fige la version).",
+        "<b>NOM_MAGASIN</b> : nom imprime en tete des exports PDF (sinon, le "
+        "nom de la machine)."]))
     st.append(Spacer(1, 9))
 
     # ---- Memo
@@ -285,6 +288,14 @@ def build(path):
         Paragraph("L'ecran se met en veille apres 10 minutes sans contact. Le "
                   "premier contact rallume seulement : il ne declenche aucun "
                   "bouton. Delai reglable a distance (SCREEN_OFF_S).", S_BODY),
+        Spacer(1, 3),
+        Paragraph("Quitter l'application : appui long (3 s) sur la ligne de "
+                  "version en bas de <b>Parametres</b>. Elle ne se relance "
+                  "qu'au prochain redemarrage du Pi.", S_BODY),
+        Spacer(1, 3),
+        Paragraph("« Heure non verifiee » en orange dans le menu : le Pi n'a pas "
+                  "pu se mettre a l'heure (pas d'internet au demarrage). Verifier "
+                  "le WiFi ; un module horloge RTC evite ce cas.", S_BODY),
     ]))
 
     doc.build(st)

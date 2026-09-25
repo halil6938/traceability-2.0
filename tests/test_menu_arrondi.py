@@ -134,7 +134,8 @@ assert not barres
 print("7. connecte : icone verte, sans barre : OK")
 
 network.is_online = lambda: False
-m._refresh_status()                       # relance un test de connexion
+network._etat["quand"] = 0.0              # le prochain passage refait le test
+m._refresh_status()
 assert attendre_reseau(m, False)
 rouge = {m.wifi.itemcget(i, "outline") for i in m.wifi.find_all()
          if m.wifi.type(i) == "arc"}

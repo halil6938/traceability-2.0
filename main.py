@@ -2,31 +2,16 @@
 """Point d'entree de l'application Traceability."""
 import sys
 import traceback
-from datetime import date, datetime
+from datetime import datetime
 
-from src import config, database, purge, usb_manager
+from src import config, database
 from src.ui_main import App
-
-
-def daily_tasks():
-    """Taches au demarrage : purge + sync USB."""
-    last = database.get_meta("last_purge")
-    today_s = date.today().isoformat()
-    if last != today_s:
-        try:
-            purge.purge_old_photos()
-        except Exception:
-            traceback.print_exc()
-        database.set_meta("last_purge", today_s)
-    try:
-        usb_manager.sync_pending()
-    except Exception:
-        traceback.print_exc()
 
 
 def main():
     database.init_db()
-    daily_tasks()
+    # La purge des vieilles photos et la copie des photos en attente vers la
+    # cle sont faites par l'appli elle-meme, en tache de fond (voir App).
     app = App()
     try:
         app.mainloop()

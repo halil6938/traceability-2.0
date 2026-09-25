@@ -13,13 +13,13 @@ Plusieurs trames peuvent arriver concatenees dans une seule notification.
 Chaque trame brute est loggee dans logs/ble_thermo.log.
 """
 import asyncio
-import logging
 import queue
 import re
 import struct
 import threading
 
 from . import config
+from .journal import journal
 
 # Plage de mesure du HP-985C : -50 a +800 C
 TEMP_MIN = -50.0
@@ -51,12 +51,7 @@ try:
 except ImportError:
     HAS_BLEAK = False
 
-logger = logging.getLogger(__name__)
-if not logger.handlers:
-    _h = logging.FileHandler(config.LOG_DIR / "ble_thermo.log")
-    _h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-    logger.addHandler(_h)
-    logger.setLevel(logging.INFO)
+logger = journal(__name__, "ble_thermo.log")
 
 
 def _plausible(v: float) -> bool:

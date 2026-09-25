@@ -1,4 +1,5 @@
 """Menu principal + routeur d'écrans."""
+import json
 import tkinter as tk
 import os
 import threading
@@ -6,7 +7,7 @@ import time
 from datetime import date, datetime, timedelta
 
 from . import (config, database, heartbeat, network, remote_lock, screen,
-               ui_rounded, updater, usb_manager)
+               ui_common, ui_rounded, updater, usb_manager)
 from .camera_scan import CameraScanScreen
 from .ui_common import Button, WifiIcon, install_tap_guard
 from .ui_temperature import TemperatureScreen
@@ -35,11 +36,16 @@ class App(tk.Tk):
 
         self.current = None
         self._lock_overlay = None
+        self._sleep_overlay = None
+        self._alarme = None
+        self._releve_en_cours = False     # releve automatique en cours (Bluetooth)
+        self._sync_en_cours = False       # copie des photos vers la cle en cours
 
         # Reglages a distance memorises (couleurs...) : appliques AVANT de
         # construire les ecrans pour qu'ils prennent effet des le demarrage.
         _locked_cache, _msg_cache, _cfg_cache = remote_lock.cached_state()
         remote_lock.apply_config(_cfg_cache)
+        remote_lock.config_changee()      # etat de depart : rien a redessiner
 
         if not database.get_meta("setup_done"):
             SetupWizard(self, self.show_menu)
@@ -61,7 +67,6 @@ class App(tk.Tk):
         self.after(20_000, self._heartbeat_tick)
 
         # Veille de l'ecran, geree par l'appli (voir _sleep)
-        self._sleep_overlay = None
         self._last_touch = time.time()
         screen.disable_os_blanking()
         # Rallumer systematiquement au demarrage : une mise a jour (ou un
@@ -80,6 +85,9 @@ class App(tk.Tk):
 
         # Purge automatique quotidienne des photos > 6 mois
         self.after(8_000, self._purge_tick)
+
+        # La nuit, retour au menu de tout ecran laisse ouvert (voir _nuit_tick)
+        self.after(60_000, self._nuit_tick)
 
     def _clear(self):
         if self.current and self.current.winfo_exists():
@@ -118,24 +126,46 @@ class App(tk.Tk):
         install_tap_guard(self.current)
 
     def _periodic_sync(self):
-        try:
-            usb_manager.sync_pending()
-        except Exception:
-            pass
+        """Copie des photos en attente vers la cle, en tache de fond : faite
+        sur l'ecran, elle le figerait le temps de copier (plusieurs secondes
+        au rebranchement de la cle apres une journee sans elle)."""
+        if not self._sync_en_cours:
+            self._sync_en_cours = True
+
+            def copier():
+                try:
+                    usb_manager.sync_pending()
+                except Exception:
+                    pass
+                finally:
+                    self._sync_en_cours = False
+
+            threading.Thread(target=copier, daemon=True).start()
         self.after(30_000, self._periodic_sync)
 
     # --- Scheduler BLE 3h du matin ---
 
     def _ble_tick(self):
+        """Releve automatique quotidien, a partir de 3 h. S'il n'a pas pu se
+        faire a 3 h (Pi eteint, appli redemarree par une mise a jour), il se
+        fait des que possible dans la journee au lieu d'etre perdu."""
         now = datetime.now()
-        if now.hour == 3 and now.minute < 5:
+        if now.hour >= 3 and not self._releve_en_cours:
             today = date.today().isoformat()
             if database.get_meta("ble_auto_date") != today:
                 database.set_meta("ble_auto_date", today)
+                self._releve_en_cours = True
                 threading.Thread(target=self._do_ble_auto, daemon=True).start()
+        self._check_ble_alert()       # une alerte ne doit pas attendre le menu
         self.after(60_000, self._ble_tick)
 
     def _do_ble_auto(self):
+        try:
+            self._releve_auto()
+        finally:
+            self._releve_en_cours = False
+
+    def _releve_auto(self):
         from . import sensor_reader
         sensors = database.list_ble_sensors()
         if not any(s["device_id"] for s in sensors):
@@ -153,12 +183,16 @@ class App(tk.Tk):
                 continue
             temp = results.get(s["mac"].lower())
             if temp is not None:
-                database.save_reading(s["device_id"], today, temp)
+                # une valeur saisie a la main ce jour-la n'est pas ecrasee
+                database.save_sensor_reading(s["device_id"], today, temp)
                 dev = devices.get(s["device_id"])
                 if dev and temp > dev["temp_max"]:
-                    alerts.append(
-                        f"{dev['name']} : {temp:.1f}°C  (max autorise : {dev['temp_max']:g}°C)"
-                    )
+                    alerts.append(f"{dev['name']} : {temp:.1f}°C — trop chaud "
+                                  f"(max autorisé : {dev['temp_max']:g}°C)")
+                elif dev and temp < dev["temp_min"]:
+                    # un frigo qui gele les produits est aussi un probleme
+                    alerts.append(f"{dev['name']} : {temp:.1f}°C — trop froid "
+                                  f"(min autorisé : {dev['temp_min']:g}°C)")
         if alerts:
             database.set_meta("ble_temp_alert", "\n".join(alerts))
 
@@ -168,12 +202,17 @@ class App(tk.Tk):
         msg = database.get_meta("ble_temp_alert")
         if msg:
             database.set_meta("ble_temp_alert", "")
+            if self._sleep_overlay is not None:
+                self._wake()          # une alerte rallume l'ecran
             self._show_alarm(msg)
 
     def _show_alarm(self, message):
+        if self._alarme is not None and self._alarme.winfo_exists():
+            self._alarme.destroy()
         overlay = tk.Frame(self, bg=config.COLOR_DANGER)
         overlay.place(relx=0, rely=0, relwidth=1, relheight=1)
-        overlay.lift()
+        self._alarme = overlay
+        self.relever_voiles()
 
         tk.Label(overlay, text="⚠  ALERTE TEMPERATURE",
                  bg=config.COLOR_DANGER, fg="white",
@@ -185,7 +224,7 @@ class App(tk.Tk):
                      font=config.FONT_BIG).pack(pady=4)
 
         tk.Label(overlay,
-                 text="\nTemperature superieure au seuil !\nVerifiez vos appareils.",
+                 text="\nTempérature hors des seuils !\nVérifiez vos appareils.",
                  bg=config.COLOR_DANGER, fg="white",
                  font=config.FONT_MED, justify="center").pack(pady=16)
 
@@ -197,8 +236,10 @@ class App(tk.Tk):
     # --- Purge automatique ---
 
     def _purge_tick(self):
+        """Purge quotidienne des vieilles photos, a partir de 2 h (ou des que
+        possible si le Pi etait eteint a cette heure-la)."""
         now = datetime.now()
-        if now.hour == 2 and now.minute < 5:
+        if now.hour >= 2:
             today = date.today().isoformat()
             if database.get_meta("purge_last_date") != today:
                 database.set_meta("purge_last_date", today)
@@ -254,6 +295,7 @@ class App(tk.Tk):
         overlay.bind("<Button-1>", lambda e: "break")   # le contact ne passe pas
         overlay.bind("<ButtonRelease-1>", self._wake)
         self._sleep_overlay = overlay
+        self.relever_voiles()
         threading.Thread(target=screen.off, daemon=True).start()
 
     def _wake(self, _event=None):
@@ -265,6 +307,53 @@ class App(tk.Tk):
         threading.Thread(target=screen.on, daemon=True).start()
         return "break"
 
+    # --- Superpositions : alerte, verrou, veille ---
+
+    def relever_voiles(self):
+        """Remet les superpositions devant l'ecran courant, dans l'ordre :
+        alerte, puis verrouillage, puis veille (tout en haut). Appele a chaque
+        changement d'ecran : un nouvel ecran se place sinon au-dessus d'elles
+        (un retour automatique au menu rendait l'appli utilisable malgre le
+        verrouillage)."""
+        for voile in (self._alarme, self._lock_overlay, self._sleep_overlay):
+            if voile is not None and voile.winfo_exists():
+                voile.lift()
+
+    # --- Nuit : retour au menu ---
+
+    def _nuit_tick(self):
+        """De nuit, un ecran laisse ouvert (Reception, Releve...) est ferme
+        apres un long moment sans contact : il garderait le Bluetooth reserve
+        (le releve de 3 h serait bloque), empecherait les mises a jour, et le
+        pistolet serait recherche toute la nuit."""
+        debut, fin = config.NUIT_HEURES
+        h = datetime.now().hour
+        nuit = (h >= debut or h < fin) if debut > fin else (debut <= h < fin)
+        if (nuit and self.seconds_idle() > config.NUIT_INACTIVITE_S
+                and self._ecran_affiche() is not None
+                and not isinstance(self._ecran_affiche(), MainMenu)):
+            ui_common.close_all_modals()
+            # laisser se terminer les fenetres qui viennent d'etre fermees
+            self.after(300, self._retour_nuit)
+        self.after(60_000, self._nuit_tick)
+
+    def _ecran_affiche(self):
+        """L'ecran reellement affiche (les sous-ecrans de l'historique ne sont
+        pas enregistres dans self.current)."""
+        for w in self.winfo_children():
+            if isinstance(w, tk.Frame) and w.winfo_manager() == "pack":
+                return w
+        return None
+
+    def _retour_nuit(self):
+        ecran = self._ecran_affiche()
+        if ecran is None or isinstance(ecran, MainMenu):
+            return
+        retour = getattr(ecran, "_back", None)
+        if retour is not None:    # (l'assistant de premiere installation n'en a
+            retour()              # pas : il reste ouvert) ; ferme proprement
+                                  # Bluetooth, camera...
+
     # --- Mise a jour automatique ---
 
     def _update_ready(self):
@@ -273,6 +362,8 @@ class App(tk.Tk):
         la mise a jour attend depuis trop longtemps (Pi eteint la nuit)."""
         if not isinstance(self.current, MainMenu):
             return False            # ne jamais interrompre un scan ou une mesure
+        if self._releve_en_cours:
+            return False            # ni le releve automatique des capteurs
         mode = updater.mode()
         if mode == "off":
             return False
@@ -374,6 +465,9 @@ class App(tk.Tk):
             if "res" not in box:
                 self.after(200, poll)
                 return
+            if (remote_lock.config_changee() and isinstance(self.current, MainMenu)
+                    and not ui_common.modales_ouvertes()):
+                self.show_menu()      # nouveaux reglages (style, couleurs) visibles
             if box["res"] is not None:
                 locked, message = box["res"]
                 if locked:
@@ -396,7 +490,7 @@ class App(tk.Tk):
         if self._lock_overlay is not None and self._lock_overlay.winfo_exists():
             # deja affiche : on met juste le message a jour
             self._lock_msg.config(text=message or "Application suspendue.")
-            self._lock_overlay.lift()
+            self.relever_voiles()
             return
         ov = tk.Frame(self, bg=config.COLOR_BG)
         ov.place(relx=0, rely=0, relwidth=1, relheight=1)
@@ -409,6 +503,7 @@ class App(tk.Tk):
             wraplength=config.SCREEN_W - 80, justify="center")
         self._lock_msg.pack(pady=10, padx=40)
         self._lock_overlay = ov
+        self.relever_voiles()
 
     def _hide_lock_overlay(self):
         if self._lock_overlay is not None:
@@ -417,11 +512,18 @@ class App(tk.Tk):
             self._lock_overlay = None
 
 
+def _resume(noms, maxi=3):
+    """« A, B, C et 4 autres » : la ligne d'alerte doit tenir sur l'ecran."""
+    if len(noms) <= maxi:
+        return ", ".join(noms)
+    return ", ".join(noms[:maxi]) + f" et {len(noms) - maxi} autre(s)"
+
+
 class MainMenu(tk.Frame):
     def __init__(self, master, app):
         super().__init__(master, bg=config.COLOR_BG)
         self.app = app
-        self._online = None
+        self._tours = 0
         self.pack(fill="both", expand=True)
 
         # En-tete : titre, puis (de droite a gauche) USB, WiFi, horloge
@@ -439,7 +541,7 @@ class MainMenu(tk.Frame):
         self.clock_lbl.pack(side="right", padx=12)
 
         # Alerte releves manquants (veille)
-        self.alert = tk.Label(self, text="", bg=config.COLOR_BG,
+        self.alert = tk.Label(self, text="", bg=config.COLOR_BG, anchor="w",
                               fg=config.COLOR_WARNING, font=config.FONT_MED)
         self.alert.pack(fill="x", padx=16)
 
@@ -450,7 +552,6 @@ class MainMenu(tk.Frame):
 
         self._refresh_status()
         self._check_alerts()
-        self._poll_net()
 
     def _build_rounded(self):
         """Cases aux coins arrondis qui s'enfoncent au toucher."""
@@ -512,18 +613,6 @@ class MainMenu(tk.Frame):
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=16, pady=10,
                   command=self.app.show_settings).pack(side="right", expand=True, fill="x", padx=4)
 
-    def _probe_net(self):
-        self._online = network.is_online()
-
-    def _poll_net(self):
-        """Met a jour l'icone WiFi ; le test de connexion tourne en tache de
-        fond (jusqu'a 4 s en cas de coupure) pour ne jamais bloquer l'ecran."""
-        if not self.winfo_exists():
-            return
-        if self.wifi.online != self._online:
-            self.wifi.set_online(self._online)
-        self.after(1000, self._poll_net)
-
     def _big_card(self, parent, icon, title, subtitle, color, command):
         card = tk.Frame(parent, bg=color, cursor="hand2")
         card.bind("<Button-1>", lambda e: command())
@@ -538,24 +627,51 @@ class MainMenu(tk.Frame):
         return card
 
     def _refresh_status(self):
-        threading.Thread(target=self._probe_net, daemon=True).start()
+        """En-tete (toutes les 3 s) : horloge, cle USB, internet. Les tests
+        reseau tournent en tache de fond au plus une fois par minute ; ici on
+        ne fait que lire le dernier resultat."""
+        network.actualiser_si_besoin()
+        en_ligne, heure_ok = network.etat()
+        if self.wifi.online != en_ligne:
+            self.wifi.set_online(en_ligne)
+        horloge = datetime.now().strftime("%d/%m/%Y  %H:%M")
+        if heure_ok is False:
+            # sans internet au demarrage, le Pi (sans horloge interne) peut
+            # etre a la mauvaise heure : les enregistrements seraient mal dates
+            self.clock_lbl.config(text="⚠ " + horloge + " (heure non vérifiée)",
+                                  fg=config.COLOR_WARNING)
+        else:
+            self.clock_lbl.config(text=horloge, fg=config.COLOR_MUTED)
         usb_ok = usb_manager.find_usb_mount() is not None
-        self.clock_lbl.config(text=datetime.now().strftime("%d/%m/%Y  %H:%M"))
         self.usb_lbl.config(
             text="USB ✓" if usb_ok else "USB ✗",
             fg=config.COLOR_SUCCESS if usb_ok else config.COLOR_WARNING,
         )
-        self.after(10_000, self._refresh_status)
+        self._tours += 1
+        if self._tours % 20 == 0:      # environ une fois par minute
+            self._check_alerts()
+        self.after(3_000, self._refresh_status)
 
     def _check_alerts(self):
+        """Ligne d'alerte : releves manquants, piles faibles des capteurs."""
         yesterday = (date.today() - timedelta(days=1)).isoformat()
-        missing = []
-        for info in database.last_reading_date_per_device():
-            if info["last_date"] is None or info["last_date"] < yesterday:
-                missing.append(info["name"])
+        messages = []
+        missing = [info["name"] for info in database.last_reading_date_per_device()
+                   if info["last_date"] is None or info["last_date"] < yesterday]
         if missing:
-            self.alert.config(
-                text=f"⚠ Relevé manquant pour : {', '.join(missing)}"
-            )
-        else:
-            self.alert.config(text="")
+            messages.append("⚠ Relevé manquant : " + _resume(missing))
+        try:
+            faibles = set(json.loads(database.get_meta("capteurs_pile_faible", "") or "[]"))
+        except ValueError:
+            faibles = set()
+        if faibles:
+            noms = [s["device_name"] or s["label"] for s in database.list_ble_sensors()
+                    if s["mac"].lower() in faibles]
+            if noms:
+                messages.append("🔋 Pile faible : " + _resume(noms, 2))
+        texte = "   ·   ".join(messages)
+        if len(texte) > 75 and len(missing) > 1:
+            # trop long pour une ligne : le nombre d'appareils au lieu des noms
+            messages[0] = f"⚠ Relevé manquant : {len(missing)} appareils"
+            texte = "   ·   ".join(messages)
+        self.alert.config(text=texte)

@@ -7,9 +7,10 @@ rebord plus sombre en dessous : a l'appui, la face descend sur ce rebord et
 son contenu la suit. L'action n'est validee qu'au relachement SUR la case ;
 glisser le doigt ailleurs avant de relacher l'annule.
 """
+import hashlib
 import tkinter as tk
 
-from PIL import Image, ImageDraw, ImageTk
+from PIL import Image, ImageColor, ImageDraw, ImageTk
 
 from . import config
 
@@ -20,32 +21,66 @@ ZONE_MORTE = 12     # bande sur le pourtour d'une case ou un appui est ignore :
                     # un doigt qui vise le bord ne doit pas ouvrir la case voisine
 
 _SCALE = 4
-_cache = {}
+_cache = {}        # formes deja converties pour Tk (memoire)
 _tailles = {}      # tailles de tk.Button de reference deja mesurees
 
 
-def _rgb(hex_color):
-    h = hex_color.lstrip("#")
-    if len(h) == 3:
-        h = "".join(c * 2 for c in h)
-    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+def _dossier_formes():
+    """Formes deja dessinees, gardees sur la carte SD : apres un redemarrage
+    (chaque mise a jour de nuit), la premiere ouverture de chaque ecran reste
+    rapide. None si l'appli n'a pas de dossier de donnees (certains tests)."""
+    base = getattr(config, "APP_DIR", None)
+    return base / "formes_v1" if base is not None else None
 
 
-def assombrir(hex_color, facteur):
-    r, g, b = (int(c * facteur) for c in _rgb(hex_color))
+def _rgb(couleur):
+    """(r, g, b) d'une couleur Tk : « #rgb », « #rrggbb » ou un nom (« white »)."""
+    try:
+        return ImageColor.getrgb(couleur)[:3]
+    except ValueError:
+        r, g, b = tk._default_root.winfo_rgb(couleur)
+        return r >> 8, g >> 8, b >> 8
+
+
+def assombrir(couleur, facteur):
+    r, g, b = (int(c * facteur) for c in _rgb(couleur))
     return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _forme(cle, dessiner, w, h):
+    """PhotoImage d'une forme : memoire, sinon disque, sinon dessinee a 4x puis
+    reduite (lissage des bords)."""
+    if cle not in _cache:
+        dossier = _dossier_formes()
+        fichier = (dossier / (hashlib.md5(repr(cle).encode()).hexdigest() + ".png")
+                   if dossier is not None else None)
+        img = None
+        try:
+            if fichier is None:
+                raise OSError("pas de cache disque")
+            img = Image.open(fichier)
+            img.load()
+        except (OSError, ValueError):
+            s = _SCALE
+            grand = Image.new("RGBA", (w * s, h * s), (0, 0, 0, 0))
+            dessiner(ImageDraw.Draw(grand), s)
+            img = grand.reduce(s)
+            if fichier is not None:
+                try:
+                    dossier.mkdir(parents=True, exist_ok=True)
+                    img.save(fichier)
+                except OSError:
+                    pass
+        _cache[cle] = ImageTk.PhotoImage(img)
+    return _cache[cle]
 
 
 def rounded_image(w, h, radius, fill):
     """Rectangle arrondi lisse (RGBA), mis en cache."""
-    key = (w, h, radius, fill)
-    if key not in _cache:
-        s = _SCALE
-        img = Image.new("RGBA", (w * s, h * s), (0, 0, 0, 0))
-        ImageDraw.Draw(img).rounded_rectangle(
-            [0, 0, w * s - 1, h * s - 1], radius=radius * s, fill=_rgb(fill))
-        _cache[key] = ImageTk.PhotoImage(img.resize((w, h), Image.LANCZOS))
-    return _cache[key]
+    def dessiner(d, s):
+        d.rounded_rectangle([0, 0, w * s - 1, h * s - 1], radius=radius * s,
+                            fill=_rgb(fill))
+    return _forme(("rect", w, h, radius, fill), dessiner, w, h)
 
 
 class _Touche(tk.Canvas):
@@ -140,7 +175,6 @@ class RoundedButton(tk.Canvas):
             fond = config.COLOR_BG
         super().__init__(master, bg=fond, highlightthickness=0, bd=0,
                          cursor="hand2")
-        from tkinter import font as tkfont
         self._opts = {"text": text, "command": command, "bg": bg or config.COLOR_PRIMARY,
                       "fg": fg,
                       "padx": int(padx) if padx is not None else int(self.winfo_fpixels("3m")),
@@ -154,7 +188,6 @@ class RoundedButton(tk.Canvas):
             ("wraplength", wraplength or None), ("bd", autres.get("bd")),
             ("highlightthickness", autres.get("highlightthickness")),
             ("relief", autres.get("relief"))) if v is not None}
-        self._font = tkfont.Font(font=font or config.FONT_MED)
         self._font_spec = font or config.FONT_MED
         self._armed = self._appuye = False
         self._taille = None
@@ -182,8 +215,9 @@ class RoundedButton(tk.Canvas):
         cle = (str(self._font_spec), "" if kw.get("width") else texte,
                texte.count("\n"), tuple(sorted(kw.items())))
         if cle not in _tailles:
+            # la taille demandee est calculee des la creation : pas besoin d'une
+            # passe de mise en page (couteuse) pour la lire
             ref = tk.Button(self, text=texte, font=self._font_spec, **kw)
-            ref.update_idletasks()
             _tailles[cle] = (ref.winfo_reqwidth(), ref.winfo_reqheight())
             ref.destroy()
         w, h = _tailles[cle]
@@ -260,8 +294,6 @@ class RoundedButton(tk.Canvas):
         retaille = False
         for cle, val in kw.items():
             if cle == "font":
-                from tkinter import font as tkfont
-                self._font = tkfont.Font(font=val)
                 self._font_spec = val
                 retaille = True
             elif cle in self._opts:
@@ -298,18 +330,13 @@ HIST_BARRE = 7                 # largeur de la barre de couleur a gauche
 
 def ligne_image(w, h, rayon, face, accent):
     """Ligne arrondie avec une barre de couleur sur son bord gauche."""
-    key = ("ligne", w, h, rayon, face, accent)
-    if key not in _cache:
-        s = _SCALE
-        img = Image.new("RGBA", (w * s, h * s), (0, 0, 0, 0))
-        d = ImageDraw.Draw(img)
+    def dessiner(d, s):
         d.rounded_rectangle([0, 0, w * s - 1, h * s - 1], radius=rayon * s,
                             fill=_rgb(accent))
         d.rounded_rectangle([HIST_BARRE * s, 0, w * s - 1, h * s - 1],
                             radius=rayon * s, fill=_rgb(face),
                             corners=(False, True, True, False))
-        _cache[key] = ImageTk.PhotoImage(img.resize((w, h), Image.LANCZOS))
-    return _cache[key]
+    return _forme(("ligne", w, h, rayon, face, accent), dessiner, w, h)
 
 
 class Ligne(_Touche):

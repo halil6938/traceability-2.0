@@ -8,7 +8,12 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 
-from . import database, usb_manager
+from . import config, database, remote_lock, usb_manager
+
+
+def _nom_magasin():
+    """Nom imprime en tete du PDF (reglable a distance), sinon nom du Pi."""
+    return config.NOM_MAGASIN or remote_lock.device_id()
 
 
 def export_month_pdf(year: int, month: int) -> Path | None:
@@ -20,14 +25,16 @@ def export_month_pdf(year: int, month: int) -> Path | None:
     start = date(year, month, 1)
     end = date(year, month, monthrange(year, month)[1])
     readings = database.readings_in_range(start, end)
-    devices = database.list_devices()
+    # appareils en service + ceux retires qui ont des releves ce mois-la
+    devices = database.devices_for_period(start, end)
 
     # Matrice : devices en lignes, jours en colonnes
     days = [date(year, month, d) for d in range(1, monthrange(year, month)[1] + 1)]
     matrix = {d["id"]: {day.isoformat(): None for day in days} for d in devices}
     for r in readings:
         if r["device_id"] in matrix:
-            matrix[r["device_id"]][r["reading_date"]] = (r["temperature"], r["temp_min"], r["temp_max"])
+            matrix[r["device_id"]][r["reading_date"]] = (
+                r["temperature"], r["temp_min"], r["temp_max"], r.get("source"))
 
     out_path = base / "exports" / f"releves_{year}-{month:02d}.pdf"
 
@@ -36,6 +43,8 @@ def export_month_pdf(year: int, month: int) -> Path | None:
     styles = getSampleStyleSheet()
     story = [
         Paragraph(f"<b>Relevés de température — {month:02d}/{year}</b>", styles["Title"]),
+        Paragraph(f"{_nom_magasin()} — édité le "
+                  f"{datetime.now().strftime('%d/%m/%Y à %H:%M')}", styles["Normal"]),
         Spacer(1, 8),
     ]
 
@@ -50,8 +59,9 @@ def export_month_pdf(year: int, month: int) -> Path | None:
             if entry is None:
                 row.append("")
             else:
-                temp, tmin, tmax = entry
-                row.append(f"{temp:g}")
+                temp, tmin, tmax, source = entry
+                # * = saisie a l'ecran (correction ou releve sans capteur)
+                row.append(f"{temp:g}" + ("*" if source == "manuel" else ""))
                 if temp < tmin or temp > tmax:
                     alert_cells.append((ci, di))
         data.append(row)
@@ -75,7 +85,8 @@ def export_month_pdf(year: int, month: int) -> Path | None:
     story.append(t)
     story.append(Spacer(1, 12))
     story.append(Paragraph(
-        "Cellules rouges : hors seuils. Cellules vides : relevé manquant.",
+        "Cellules rouges : hors seuils. Cellules vides : relevé manquant. "
+        "* : valeur saisie à l'écran (sans capteur, ou corrigée).",
         styles["Italic"]))
 
     # --- Section receptions ---
@@ -86,22 +97,32 @@ def export_month_pdf(year: int, month: int) -> Path | None:
             f"<b>Réceptions — {month:02d}/{year}</b>", styles["Heading2"]))
         story.append(Spacer(1, 6))
 
-        rdata = [["Date", "Heure", "Fournisseur", "Température (°C)"]]
-        for r in reversed(receptions):  # ordre chronologique
+        rdata = [["Date", "Heure", "Fournisseur", "Température (°C)", "Max accepté"]]
+        hors = []
+        for i, r in enumerate(reversed(receptions), start=1):  # ordre chronologique
             dt = datetime.fromisoformat(r["created_at"])
+            tmax = r.get("supplier_temp_max")
             rdata.append([dt.strftime("%d/%m/%Y"), dt.strftime("%H:%M"),
-                          r["supplier_name"], f"{r['temperature']:g}"])
+                          r["supplier_name"], f"{r['temperature']:g}",
+                          f"{tmax:g}" if tmax is not None else "—"])
+            if database.reception_hors_seuil(r):
+                hors.append(i)
 
-        rt = Table(rdata, colWidths=[90, 60, 300, 110], repeatRows=1)
-        rt.setStyle(TableStyle([
+        rt = Table(rdata, colWidths=[90, 60, 260, 110, 80], repeatRows=1)
+        style_r = TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f59e0b")),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
             ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
             ("FONTSIZE", (0, 0), (-1, -1), 8),
-            ("ALIGN", (3, 1), (3, -1), "CENTER"),
+            ("ALIGN", (3, 1), (4, -1), "CENTER"),
             ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
             ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ]))
+        ])
+        for ligne in hors:              # au-dessus du maximum du fournisseur
+            style_r.add("BACKGROUND", (3, ligne), (3, ligne), colors.HexColor("#fee2e2"))
+            style_r.add("TEXTCOLOR", (3, ligne), (3, ligne), colors.HexColor("#b91c1c"))
+            style_r.add("FONTNAME", (3, ligne), (3, ligne), "Helvetica-Bold")
+        rt.setStyle(style_r)
         story.append(rt)
 
     doc.build(story)

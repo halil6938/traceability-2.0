@@ -10,20 +10,15 @@ et apres redemarrage ; une coupure reseau garde simplement le dernier etat
 connu (jamais de blocage/deblocage accidentel sur simple perte de reseau).
 """
 import json
-import logging
 import socket
 import time
 import urllib.error
 import urllib.request
 
 from . import config, database
+from .journal import journal
 
-logger = logging.getLogger(__name__)
-if not logger.handlers:
-    _h = logging.FileHandler(config.LOG_DIR / "remote.log")
-    _h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-    logger.addHandler(_h)
-    logger.setLevel(logging.INFO)
+logger = journal(__name__, "remote.log")
 
 
 # --- Reglages surchargeables a distance : nom -> validation/conversion ---
@@ -50,6 +45,13 @@ def _posint(v):
     return n
 
 
+def _texte(v):
+    v = str(v).strip()
+    if len(v) > 60:
+        raise ValueError("texte trop long (60 caracteres max)")
+    return v
+
+
 CONFIG_WHITELIST = {
     "COLOR_BG": _color, "COLOR_FG": _color, "COLOR_PRIMARY": _color,
     "COLOR_SUCCESS": _color, "COLOR_DANGER": _color, "COLOR_WARNING": _color,
@@ -60,6 +62,7 @@ CONFIG_WHITELIST = {
     "SCREEN_OFF_S": _posint, "HEARTBEAT_HOUR": _posint,
     "PHOTO_RETENTION_DAYS": _posint, "FOCUS_DISTANCE_CM": _posint,
     "CAMERA_ROTATION": _posint,
+    "NOM_MAGASIN": _texte, "NUIT_INACTIVITE_S": _posint,
 }
 
 
@@ -67,20 +70,50 @@ def device_id():
     return (config.DEVICE_ID or socket.gethostname() or "inconnu").strip()
 
 
+# Reglages surcharges a distance : leur valeur d'origine, pour la remettre si
+# la ligne est retiree du fichier (sinon le reglage resterait en place
+# jusqu'au prochain redemarrage).
+_origines = {}
+_dernier_cfg = None
+_change = False
+
+
 def apply_config(cfg):
-    """Applique les reglages surcharges (liste blanche) au module config.
-    Un reglage inconnu ou invalide est ignore (jamais de plantage)."""
+    """Applique les reglages surcharges (liste blanche) au module config, et
+    remet leur valeur d'origine a ceux qui ont ete retires. Un reglage inconnu
+    ou invalide est ignore (jamais de plantage)."""
+    global _dernier_cfg, _change
     if not isinstance(cfg, dict):
-        return
+        cfg = {}
+    signature = json.dumps(cfg, sort_keys=True, default=str)
+    if signature == _dernier_cfg:
+        return                          # rien de neuf : rien a faire, rien a ecrire
+    _dernier_cfg = signature
+    voulu = {}
     for key, raw in cfg.items():
         conv = CONFIG_WHITELIST.get(key)
         if conv is None:
             logger.warning("reglage non autorise ignore : %s", key)
             continue
         try:
-            setattr(config, key, conv(raw))
+            voulu[key] = conv(raw)
         except Exception as e:
             logger.warning("reglage %s invalide (%s) : %s", key, raw, e)
+    for key in list(_origines):
+        if key not in voulu:
+            setattr(config, key, _origines.pop(key))
+    for key, valeur in voulu.items():
+        _origines.setdefault(key, getattr(config, key))
+        setattr(config, key, valeur)
+    _change = True
+
+
+def config_changee():
+    """Vrai (une seule fois) si des reglages ont change depuis le dernier
+    appel : l'ecran principal se redessine alors pour les montrer."""
+    global _change
+    changee, _change = _change, False
+    return changee
 
 
 def cached_state():
@@ -115,11 +148,12 @@ def _fetch():
     except urllib.error.HTTPError as e:
         if e.code == 404:
             return dict(_AUTHORIZED)  # pas de fichier pour ce Pi = autorise
-        logger.info("verification a distance (HTTP %s)", e.code)
+        _signaler_echec(f"HTTP {e.code}")
         return None
     except Exception as e:
-        logger.info("verification a distance impossible : %s", e)
+        _signaler_echec(str(e))
         return None
+    _signaler_echec(None)
     if not isinstance(entry, dict):
         return dict(_AUTHORIZED)
     return {
@@ -128,6 +162,21 @@ def _fetch():
         "config": entry.get("config") or {},
         "update": str(entry.get("update", "auto")),
     }
+
+
+_dernier_echec = None
+
+
+def _signaler_echec(message):
+    """Journalise une coupure une seule fois (et le retour), pas toutes les
+    20 secondes pendant toute la duree de la coupure."""
+    global _dernier_echec
+    if message != _dernier_echec:
+        if message:
+            logger.info("verification a distance impossible : %s", message)
+        elif _dernier_echec:
+            logger.info("verification a distance retablie")
+        _dernier_echec = message
 
 
 def refresh():
@@ -139,11 +188,18 @@ def refresh():
         locked, message, cfg = cached_state()
         apply_config(cfg)
         return locked, message
-    database.set_meta("remote_locked", "1" if entry["locked"] else "0")
-    database.set_meta("remote_lock_msg", entry["message"])
-    database.set_meta("remote_config", json.dumps(entry["config"]))
-    database.set_meta("remote_update", entry["update"])
+    avant = (database.get_meta("remote_locked", "0"),
+             database.get_meta("remote_lock_msg", "") or "",
+             database.get_meta("remote_config", "") or "{}",
+             database.get_meta("remote_update", "") or "")
+    apres = ("1" if entry["locked"] else "0", entry["message"],
+             json.dumps(entry["config"]), entry["update"])
+    if apres != avant:
+        # ecriture (carte SD) et journal uniquement quand quelque chose change
+        for cle, valeur in zip(("remote_locked", "remote_lock_msg",
+                                "remote_config", "remote_update"), apres):
+            database.set_meta(cle, valeur)
+        logger.info("etat distant : locked=%s update=%s config=%s",
+                    entry["locked"], entry["update"], entry["config"])
     apply_config(entry["config"])
-    logger.info("etat distant : locked=%s update=%s config=%s",
-                entry["locked"], entry["update"], entry["config"])
     return entry["locked"], entry["message"]

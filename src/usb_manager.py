@@ -1,4 +1,5 @@
 """Detection de la cle USB et synchronisation des photos en attente."""
+import os
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -6,32 +7,32 @@ from . import config, database
 
 
 def find_usb_mount() -> Path | None:
-    candidates = []
-    for base in [Path("/media"), Path("/run/media")]:
-        if not base.exists():
-            continue
-        try:
-            for lvl1 in base.iterdir():
-                if not lvl1.is_dir():
-                    continue
-                candidates.append(lvl1)
-                try:
-                    for lvl2 in lvl1.iterdir():
-                        if lvl2.is_dir():
-                            candidates.append(lvl2)
-                except PermissionError:
-                    pass
-        except PermissionError:
-            pass
+    """Premiere cle USB montee et accessible en ecriture, ou None.
 
-    for candidate in candidates:
+    Seuls les vrais points de montage comptent : un simple dossier de la carte
+    SD sous /media ne doit jamais etre pris pour une cle. L'ecriture est testee
+    SANS ecrire (os.access, qui signale aussi une cle passee en lecture seule) :
+    ce test tourne toutes les quelques secondes, et creer un fichier a chaque
+    fois userait la cle et risquerait d'abimer ses donnees en cas de coupure
+    de courant."""
+    for base in (Path("/media"), Path("/run/media")):
         try:
-            test = candidate / ".traceability_test"
-            test.touch()
-            test.unlink()
-            return candidate
-        except (OSError, PermissionError):
+            niveau1 = sorted(base.iterdir()) if base.is_dir() else []
+        except OSError:
             continue
+        for p1 in niveau1:
+            candidats = [p1]
+            try:
+                if p1.is_dir():
+                    candidats += sorted(p1.iterdir())
+            except OSError:
+                pass
+            for c in candidats:
+                try:
+                    if c.is_dir() and os.path.ismount(c) and os.access(c, os.W_OK):
+                        return c
+                except OSError:
+                    continue
     return None
 
 

@@ -1,9 +1,10 @@
 """Ecran historique : Tickets (photos), Temperatures ou Receptions."""
 import tkinter as tk
+import tkinter.font as tkfont
 from datetime import date, datetime, time
 from calendar import monthrange
 from . import config, database, pdf_export, ui_rounded
-from .ui_common import (Button, numpad_popup, info, error, confirm,
+from .ui_common import (Button, ZoneDefilante, numpad_popup, info, error, confirm,
                         open_modal, close_modal, bind_drag_scroll, install_tap_guard,
                         schedule_auto_return as auto_return)
 
@@ -347,18 +348,12 @@ class TemperatureHistoryScreen(tk.Frame):
                   bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4,
                   command=self._next_month).pack(side="right")
 
-        container = tk.Frame(self, bg=config.COLOR_BG)
-        container.pack(fill="both", expand=True, padx=10, pady=6)
-        canvas = tk.Canvas(container, bg=config.COLOR_BG, highlightthickness=0)
-        sb = tk.Scrollbar(container, orient="vertical", command=canvas.yview)
-        self.table_frame = tk.Frame(canvas, bg=config.COLOR_BG)
-        self.table_frame.bind("<Configure>",
-                              lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=self.table_frame, anchor="nw")
-        canvas.configure(yscrollcommand=sb.set)
-        canvas.pack(side="left", fill="both", expand=True)
-        sb.pack(side="right", fill="y")
-        self.canvas = canvas
+        # Defile dans les deux sens : au-dela de 5 appareils, les colonnes ne
+        # tiennent plus dans la largeur de l'ecran.
+        self.zone = ZoneDefilante(self, config.COLOR_BG, horizontal=True)
+        self.zone.pack(fill="both", expand=True, padx=10, pady=6)
+        self.canvas = self.zone.canvas
+        self.table_frame = self.zone.interieur
 
         self._render()
 
@@ -376,15 +371,25 @@ class TemperatureHistoryScreen(tk.Frame):
             self.year += 1
         self._render()
 
+    def _largeur_colonne(self, nb_appareils):
+        """Largeur des colonnes (en caracteres) : resserrees quand il y a
+        beaucoup d'appareils, sans descendre sous une largeur lisible ; au-dela,
+        le tableau defile sur le cote."""
+        chiffre = tkfont.Font(font=config.FONT_MED).measure("0")
+        disponible = config.SCREEN_W - 40 - 18 - 7 * chiffre
+        par_colonne = disponible // max(1, nb_appareils) - 8
+        return max(6, min(10, par_colonne // chiffre))
+
     def _render(self):
         self.title_lbl.config(text=f"Histo. {MONTHS[self.month-1][:4]}. {self.year}")
-        for w in self.table_frame.winfo_children():
-            w.destroy()
+        self.zone.vider()
 
         start = date(self.year, self.month, 1)
         end = date(self.year, self.month, monthrange(self.year, self.month)[1])
         readings = database.readings_in_range(start, end)
-        devices = database.list_devices()
+        # appareils en service + ceux retires qui ont des releves ce mois-la
+        devices = database.devices_for_period(start, end)
+        self._largeur = self._largeur_colonne(len(devices))
 
         if not devices:
             tk.Label(self.table_frame, text="(aucun appareil)", bg=config.COLOR_BG,
@@ -399,9 +404,9 @@ class TemperatureHistoryScreen(tk.Frame):
                  font=config.FONT_SMALL, width=6, anchor="w"
                  ).pack(side="left", padx=2)
         for d in devices:
-            tk.Label(head, text=d["name"][:10], bg=config.COLOR_BG,
+            tk.Label(head, text=d["name"][:self._largeur + 2], bg=config.COLOR_BG,
                      fg=config.COLOR_MUTED, font=config.FONT_SMALL,
-                     width=10, anchor="w"
+                     width=self._largeur + 2, anchor="w"
                      ).pack(side="left", padx=2)
 
         for day_num in range(1, monthrange(self.year, self.month)[1] + 1):
@@ -415,7 +420,7 @@ class TemperatureHistoryScreen(tk.Frame):
                 entry = idx.get((d["id"], day.isoformat()))
                 self._cell(row, d, day, entry)
 
-        bind_drag_scroll(self.canvas, self.table_frame)
+        self.zone.actualiser()
 
     def _cell(self, parent, device, day, entry):
         if entry is None:
@@ -431,7 +436,7 @@ class TemperatureHistoryScreen(tk.Frame):
         # par jour et par appareil (des centaines), reconstruits a chaque
         # changement de mois ; des boutons dessines y seraient lents sur le Pi.
         tk.Button(parent, text=text, bg=bg, fg=fg, font=config.FONT_MED,
-                  width=10, bd=0, height=1,
+                  width=self._largeur, bd=0, height=1,
                   command=lambda: self._edit(device, day, entry)
                   ).pack(side="left", padx=2, pady=2)
 
@@ -568,9 +573,11 @@ class ReceptionHistoryScreen(tk.Frame):
                       bg=config.COLOR_PRIMARY, fg="white", bd=0, padx=8, pady=4,
                       command=lambda x=r: self._edit(x)
                       ).pack(side="right", padx=4, pady=4)
-            tk.Label(row, text=f"{r['temperature']:.1f}°C", bg=config.COLOR_CARD,
-                     fg=config.COLOR_SUCCESS, font=config.FONT_MED
-                     ).pack(side="right", padx=12)
+            hors = database.reception_hors_seuil(r)
+            tk.Label(row, text=("⚠ " if hors else "") + f"{r['temperature']:.1f}°C",
+                     bg=config.COLOR_CARD,
+                     fg=config.COLOR_DANGER if hors else config.COLOR_SUCCESS,
+                     font=config.FONT_MED).pack(side="right", padx=12)
             tk.Label(row, text=r["supplier_name"], bg=config.COLOR_CARD,
                      fg=config.COLOR_FG, font=config.FONT_MED, anchor="w"
                      ).pack(side="left", padx=4, expand=True, fill="x")
@@ -595,17 +602,22 @@ class ReceptionHistoryScreen(tk.Frame):
             return
         h = min(80 + len(suppliers) * 52 + 50, config.SCREEN_H - 30)
         panel = self._panel("Quel fournisseur ?", 420, h)
+        # Annuler d'abord, en bas : il reste visible meme avec beaucoup de
+        # fournisseurs, dont la liste defile au-dessus
+        Button(panel, text="Annuler", font=config.FONT_SMALL,
+                  bg=config.COLOR_DANGER, fg="white", bd=0, pady=6,
+                  command=lambda: close_modal(panel)
+                  ).pack(side="bottom", fill="x", padx=16, pady=(6, 8))
+        liste = ZoneDefilante(panel, config.COLOR_BG)
+        liste.pack(fill="both", expand=True, padx=12)
         for s in suppliers:
-            Button(panel, text=s["name"], font=config.FONT_MED,
+            Button(liste.interieur, text=s["name"], font=config.FONT_MED,
                       bg=config.COLOR_CARD, fg=config.COLOR_FG, bd=0,
                       padx=12, pady=8,
                       command=(lambda x=s: (close_modal(panel),
                                             self._pick_day(x)))
-                      ).pack(fill="x", padx=16, pady=2)
-        Button(panel, text="Annuler", font=config.FONT_SMALL,
-                  bg=config.COLOR_DANGER, fg="white", bd=0, pady=6,
-                  command=lambda: close_modal(panel)
-                  ).pack(fill="x", padx=16, pady=(6, 8))
+                      ).pack(fill="x", padx=4, pady=2)
+        liste.actualiser()
 
     def _pick_day(self, supplier):
         """Jours du mois affiche ; les jours a venir sont inactifs."""

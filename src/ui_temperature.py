@@ -190,19 +190,27 @@ class TemperatureScreen(tk.Frame):
     def _apply_results(self, sensors, results):
         if not self.winfo_exists():
             return
-        found = []
+        found, gardees = [], []
         for s in sensors:
             if not s["device_id"]:
                 continue
             temp = results.get(s["mac"].lower())
-            if temp is not None:
-                database.save_reading(s["device_id"], self.today, temp)
+            if temp is None:
+                continue
+            # une valeur saisie a la main aujourd'hui n'est jamais ecrasee
+            if database.save_sensor_reading(s["device_id"], self.today, temp):
                 found.append(f"{s['device_name']}: {temp:.1f}°C")
+            else:
+                gardees.append(f"{s['device_name']} (capteur {temp:.1f}°C)")
 
         self._render()
 
-        if found:
-            self.status_var.set("✓ " + "   ".join(found))
+        if found or gardees:
+            texte = "✓ " + "   ".join(found) if found else ""
+            if gardees:
+                texte += ("\n" if texte else "")
+                texte += "Saisie manuelle conservée : " + ", ".join(gardees)
+            self.status_var.set(texte)
             self.status_lbl.config(fg=config.COLOR_SUCCESS)
         else:
             self.status_var.set("✗ Aucun capteur detecte (hors portee ?)")

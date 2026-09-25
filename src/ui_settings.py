@@ -1,54 +1,67 @@
 """Ecran parametres : gerer les appareils, lancer purge, export PDF, quitter."""
 import tkinter as tk
-import logging
 import sys
 import threading
 from datetime import date
 from . import config, database, pdf_export
-from .ui_common import (Button, make_button, text_popup, numpad_popup, info, confirm,
-                        error, close_all_modals, schedule_auto_return as auto_return)
+from .journal import journal
+from . import ui_common
+from .ui_common import (Button, ZoneDefilante, make_button, text_popup, numpad_popup,
+                        info, confirm, error, close_all_modals,
+                        schedule_auto_return as auto_return)
 
-logger = logging.getLogger(__name__)
-if not logger.handlers:
-    _h = logging.FileHandler(config.LOG_DIR / "ui.log")
-    _h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-    logger.addHandler(_h)
-    logger.setLevel(logging.INFO)
+logger = journal(__name__, "ui.log")
+
+
+def _liste_choix(parent, titre, couleur, largeur, nb_lignes):
+    """Cadre de choix superpose, dont la liste defile si elle est longue :
+    le bouton Annuler (a placer en premier, en bas) reste toujours visible."""
+    h = min(110 + nb_lignes * 54, config.SCREEN_H - 40)
+    pick = tk.Frame(parent, bg=config.COLOR_BG, highlightthickness=4,
+                    highlightbackground=couleur, highlightcolor=couleur)
+    pick.place(relx=0.5, rely=0.5, anchor="center", width=largeur, height=h)
+    pick.lift()
+    tk.Label(pick, text=titre, bg=config.COLOR_BG, fg=config.COLOR_FG,
+             font=config.FONT_MED).pack(side="top", pady=8)
+    return pick
 
 
 def _pick_device(parent, sensor, devices, on_done):
     """Choix de l'appareil associe a un capteur. Cadre superpose et non
     fenetre modale : voir _ble_config (les modales figent l'appli sur le Pi)."""
-    h = min(90 + len(devices) * 54 + 54, config.SCREEN_H - 40)
-    pick = tk.Frame(parent, bg=config.COLOR_BG, highlightthickness=4,
-                    highlightbackground=config.COLOR_SUCCESS,
-                    highlightcolor=config.COLOR_SUCCESS)
-    pick.place(relx=0.5, rely=0.5, anchor="center", width=380, height=h)
-    pick.lift()
-
-    tk.Label(pick, text=f"Assigner '{sensor['label']}' a :",
-             bg=config.COLOR_BG, fg=config.COLOR_FG,
-             font=config.FONT_MED).pack(pady=8)
+    pick = _liste_choix(parent, f"Assigner '{sensor['label']}' a :",
+                        config.COLOR_SUCCESS, 380, len(devices) + 2)
 
     def choose(device_id):
         database.update_ble_sensor(sensor["id"], sensor["label"], device_id)
         pick.destroy()
         on_done()
 
-    for d in devices:
-        Button(pick, text=d["name"], font=config.FONT_MED,
-                  bg=config.COLOR_CARD, fg=config.COLOR_FG, bd=0,
-                  padx=12, pady=8,
-                  command=lambda did=d["id"]: choose(did)
-                  ).pack(fill="x", padx=16, pady=2)
-
+    Button(pick, text="Annuler", font=config.FONT_SMALL,
+              bg=config.COLOR_CARD, fg="white", bd=0, padx=12, pady=6,
+              command=pick.destroy).pack(side="bottom", fill="x", padx=16, pady=(0, 8))
     Button(pick, text="— Desassigner —", font=config.FONT_SMALL,
               bg=config.COLOR_DANGER, fg="white", bd=0, padx=12, pady=6,
               command=lambda: choose(None)
-              ).pack(fill="x", padx=16, pady=(6, 4))
-    Button(pick, text="Annuler", font=config.FONT_SMALL,
-              bg=config.COLOR_CARD, fg="white", bd=0, padx=12, pady=6,
-              command=pick.destroy).pack(fill="x", padx=16, pady=(0, 8))
+              ).pack(side="bottom", fill="x", padx=16, pady=(6, 4))
+    liste = ZoneDefilante(pick, config.COLOR_BG)
+    liste.pack(fill="both", expand=True, padx=12)
+    for d in devices:
+        Button(liste.interieur, text=d["name"], font=config.FONT_MED,
+                  bg=config.COLOR_CARD, fg=config.COLOR_FG, bd=0,
+                  padx=12, pady=8,
+                  command=lambda did=d["id"]: choose(did)
+                  ).pack(fill="x", padx=4, pady=2)
+    liste.actualiser()
+
+
+def _normaliser_mac(texte):
+    """Adresse Bluetooth au format aa:bb:cc:dd:ee:ff, qu'elle ait ete tapee
+    avec des « : », des « - » ou sans separateur."""
+    brut = "".join(c for c in texte.strip().lower() if c in "0123456789abcdef")
+    if len(brut) == 12:
+        return ":".join(brut[i:i + 2] for i in range(0, 12, 2))
+    return texte.strip().lower()
 
 
 class SettingsScreen(tk.Frame):
@@ -71,17 +84,28 @@ class SettingsScreen(tk.Frame):
                  fg=config.COLOR_MUTED, font=config.FONT_MED
                  ).pack(anchor="w", padx=20, pady=(4, 2))
 
-        self.list_frame = tk.Frame(self, bg=config.COLOR_BG)
-        self.list_frame.pack(fill="both", expand=True, padx=20)
+        # Les boutons sont places EN PREMIER, en bas : la liste des appareils
+        # prend la place restante et defile au besoin. Avant, une liste longue
+        # poussait les boutons hors de l'ecran (des 5 appareils).
+        version = tk.Label(self, text=self._version_line(), bg=config.COLOR_BG,
+                           fg=config.COLOR_MUTED, font=config.FONT_SMALL, anchor="e")
+        version.pack(side="bottom", fill="x", padx=20, pady=(0, 4))
+        # Fermer l'appli est reserve a l'installateur : appui long (3 s) sur
+        # cette ligne. Un bouton visible permettait a n'importe qui de quitter,
+        # et l'appli ne se relance pas seule (bureau visible, verrou contourne).
+        self._appui_long = None
+        version.bind("<ButtonPress-1>", lambda e: self._debut_appui_long())
+        version.bind("<ButtonRelease-1>", lambda e: self._fin_appui_long())
 
-        actions = tk.Frame(self, bg=config.COLOR_BG)
-        actions.pack(fill="x", padx=20, pady=4)
-        make_button(actions, "+ Ajouter", lambda: self._safe(self._add),
-                    bg=config.COLOR_PRIMARY, font=config.FONT_MED
+        actions3 = tk.Frame(self, bg=config.COLOR_BG)
+        actions3.pack(side="bottom", fill="x", padx=20, pady=(0, 6))
+        make_button(actions3, "📷 Test camera",
+                    lambda: self._safe(self._test_camera),
+                    bg=config.COLOR_CARD, font=config.FONT_MED
                     ).pack(expand=True, fill="x", padx=3)
 
         actions2 = tk.Frame(self, bg=config.COLOR_BG)
-        actions2.pack(fill="x", padx=20, pady=4)
+        actions2.pack(side="bottom", fill="x", padx=20, pady=4)
         make_button(actions2, "📡 Capteurs temp.",
                     lambda: self._safe(self._ble_config),
                     bg=config.COLOR_CARD, font=config.FONT_MED
@@ -91,21 +115,25 @@ class SettingsScreen(tk.Frame):
                     bg=config.COLOR_SUCCESS, font=config.FONT_MED
                     ).pack(side="right", expand=True, fill="x", padx=3)
 
-        actions3 = tk.Frame(self, bg=config.COLOR_BG)
-        actions3.pack(fill="x", padx=20, pady=(0, 6))
-        make_button(actions3, "📷 Test camera",
-                    lambda: self._safe(self._test_camera),
-                    bg=config.COLOR_CARD, font=config.FONT_MED
-                    ).pack(side="left", expand=True, fill="x", padx=3)
-        make_button(actions3, "Quitter l'appli", self._quit,
-                    bg=config.COLOR_DANGER, font=config.FONT_MED
-                    ).pack(side="right", expand=True, fill="x", padx=3)
+        actions = tk.Frame(self, bg=config.COLOR_BG)
+        actions.pack(side="bottom", fill="x", padx=20, pady=4)
+        make_button(actions, "+ Ajouter", lambda: self._safe(self._add),
+                    bg=config.COLOR_PRIMARY, font=config.FONT_MED
+                    ).pack(expand=True, fill="x", padx=3)
 
-        tk.Label(self, text=self._version_line(), bg=config.COLOR_BG,
-                 fg=config.COLOR_MUTED, font=config.FONT_SMALL, anchor="e"
-                 ).pack(fill="x", padx=20, pady=(0, 4))
+        self.liste = ZoneDefilante(self, config.COLOR_BG)
+        self.liste.pack(fill="both", expand=True, padx=20)
+        self.list_frame = self.liste.interieur
 
         self._render()
+
+    def _debut_appui_long(self):
+        self._appui_long = self.after(3000, self._quit)
+
+    def _fin_appui_long(self):
+        if self._appui_long is not None:
+            self.after_cancel(self._appui_long)
+            self._appui_long = None
 
     def _safe(self, action):
         """Lance une action d'ecran en garantissant qu'une erreur ne laisse pas
@@ -130,8 +158,7 @@ class SettingsScreen(tk.Frame):
         return f"{remote_lock.device_id()}  ·  version {commit or 'inconnue'}"
 
     def _render(self):
-        for w in self.list_frame.winfo_children():
-            w.destroy()
+        self.liste.vider()
         devices = database.list_devices()
         if not devices:
             tk.Label(self.list_frame, text="(aucun appareil)", bg=config.COLOR_BG,
@@ -153,6 +180,7 @@ class SettingsScreen(tk.Frame):
                       fg="white", bd=0, width=3,
                       command=lambda i=d["id"], n=d["name"]: self._delete(i, n)
                       ).pack(side="right", padx=4, pady=4)
+        self.liste.actualiser()
 
     def _add(self):
         name = text_popup(self, "Nom de l'appareil")
@@ -197,13 +225,22 @@ class SettingsScreen(tk.Frame):
         if tmin_v >= tmax_v:
             error(self, "Erreur", "MIN doit etre < MAX.")
             return
-        database.update_device(d["id"], name, tmin_v, tmax_v)
+        try:
+            database.update_device(d["id"], name, tmin_v, tmax_v)
+        except Exception:
+            error(self, "Erreur", f"Le nom « {name} » est deja utilise "
+                  "(eventuellement par un appareil retire).")
+            return
         self._render()
 
     def _delete(self, device_id, name):
-        if confirm(self, "Supprimer",
-                   f"Supprimer '{name}' ? Tous ses releves seront aussi supprimes."):
-            database.delete_device(device_id)
+        """Retire l'appareil du service. Ses releves ne sont PAS effaces : ils
+        restent dans l'historique et les exports (registre sanitaire). Le
+        rajouter plus tard sous le meme nom le remet en service."""
+        if confirm(self, "Retirer",
+                   f"Retirer '{name}' ?\nSes relevés restent dans l'historique "
+                   "et les exports PDF."):
+            database.archive_device(device_id)
             self._render()
 
     def _ble_config(self):
@@ -216,10 +253,13 @@ class SettingsScreen(tk.Frame):
         top = tk.Frame(self, bg=config.COLOR_BG)
         top.place(relx=0, rely=0, relwidth=1, relheight=1)
         top.lift()
+        # compte comme une fenetre ouverte : pas de retour automatique au menu
+        # pendant une configuration (une detection dure jusqu'a 25 s)
+        ui_common._OPEN_MODALS.append(top)
         logger.info("ecran capteurs : cadre cree")
 
         def close_top():
-            top.destroy()
+            ui_common.close_modal(top)
 
         # Titre
         hdr = tk.Frame(top, bg=config.COLOR_BG)
@@ -230,15 +270,15 @@ class SettingsScreen(tk.Frame):
                   font=config.FONT_MED, bd=0, padx=12,
                   command=close_top).pack(side="right")
 
-        body = tk.Frame(top, bg=config.COLOR_BG)
-        body.pack(fill="both", expand=True, padx=10)
+        # liste qui defile : placee sous les boutons du bas (packes avant elle)
+        liste = ZoneDefilante(top, config.COLOR_BG)
+        body = liste.interieur
 
         status_var = tk.StringVar()
         status_lbl = None  # sera defini apres le bouton
 
         def render():
-            for w in body.winfo_children():
-                w.destroy()
+            liste.vider()
             cur_sensors = database.list_ble_sensors()
             devices = database.list_devices()
             for s in cur_sensors:
@@ -284,13 +324,15 @@ class SettingsScreen(tk.Frame):
                 tk.Label(info_f, text=s["mac"], bg=config.COLOR_CARD,
                          fg=config.COLOR_MUTED, font=config.FONT_SMALL,
                          anchor="w").pack(anchor="w")
+            liste.actualiser()
 
         render()
         logger.info("ecran capteurs : liste affichee")
 
         # Bouton Lire maintenant
         bottom = tk.Frame(top, bg=config.COLOR_BG)
-        bottom.pack(fill="x", padx=10, pady=6)
+        bottom.pack(side="bottom", fill="x", padx=10, pady=6)
+        liste.pack(fill="both", expand=True, padx=10)
 
         status_lbl = tk.Label(bottom, textvariable=status_var, bg=config.COLOR_BG,
                               fg=config.COLOR_MUTED, font=config.FONT_SMALL,
@@ -404,20 +446,17 @@ class SettingsScreen(tk.Frame):
                 status_var.set("")
                 existing = {s["mac"].lower() for s in database.list_ble_sensors()}
 
-                ph = min(90 + len(devs) * 58, config.SCREEN_H - 40)
-                pick = tk.Frame(top, bg=config.COLOR_BG, highlightthickness=4,
-                                highlightbackground=config.COLOR_PRIMARY,
-                                highlightcolor=config.COLOR_PRIMARY)
-                pick.place(relx=0.5, rely=0.5, anchor="center",
-                           width=400, height=ph)
-                pick.lift()
+                pick = _liste_choix(top, "Choisir le capteur a ajouter :",
+                                    config.COLOR_PRIMARY, 400, len(devs) + 1)
 
                 def close_pick():
                     pick.destroy()
 
-                tk.Label(pick, text="Choisir le capteur a ajouter :",
-                         bg=config.COLOR_BG, fg=config.COLOR_FG,
-                         font=config.FONT_MED).pack(pady=8)
+                Button(pick, text="Annuler", font=config.FONT_SMALL,
+                          bg=config.COLOR_DANGER, fg="white", bd=0, pady=6,
+                          command=close_pick).pack(side="bottom", fill="x", padx=16, pady=(6, 8))
+                choix = ZoneDefilante(pick, config.COLOR_BG)
+                choix.pack(fill="both", expand=True, padx=12)
 
                 def choose(dev):
                     label = (dev["name"] or "Capteur WiFi")[:24]
@@ -430,24 +469,21 @@ class SettingsScreen(tk.Frame):
                 for dev in devs:
                     already = dev["id"].lower() in existing
                     txt = f"{dev['name']}" + ("   (deja ajoute)" if already else "")
-                    b = Button(pick, text=txt, font=config.FONT_MED,
+                    b = Button(choix.interieur, text=txt, font=config.FONT_MED,
                                   bg=config.COLOR_CARD, fg=config.COLOR_FG, bd=0,
                                   padx=12, pady=8,
                                   command=(lambda d=dev: choose(d)))
                     if already:
                         b.config(state="disabled", fg=config.COLOR_MUTED)
-                    b.pack(fill="x", padx=16, pady=2)
-
-                Button(pick, text="Annuler", font=config.FONT_SMALL,
-                          bg=config.COLOR_DANGER, fg="white", bd=0, pady=6,
-                          command=close_pick).pack(fill="x", padx=16, pady=(6, 8))
+                    b.pack(fill="x", padx=4, pady=2)
+                choix.actualiser()
 
             threading.Thread(target=do, daemon=True).start()
             top.after(200, poll)
 
         def _add_ble_sensor(mac):
             """Enregistre un capteur BLE, nomme d'apres la fin de son adresse."""
-            mac = mac.strip().lower()
+            mac = _normaliser_mac(mac)
             if len(mac) < 5:
                 return False
             if any(s["mac"].lower() == mac for s in database.list_ble_sensors()):
@@ -499,30 +535,26 @@ class SettingsScreen(tk.Frame):
                     return
                 status_var.set("")
 
-                ph = min(90 + len(nouveaux) * 58, config.SCREEN_H - 40)
-                pick = tk.Frame(top, bg=config.COLOR_BG, highlightthickness=4,
-                                highlightbackground=config.COLOR_SUCCESS,
-                                highlightcolor=config.COLOR_SUCCESS)
-                pick.place(relx=0.5, rely=0.5, anchor="center",
-                           width=440, height=ph)
-                pick.lift()
-                tk.Label(pick, text="Capteurs détectés :", bg=config.COLOR_BG,
-                         fg=config.COLOR_FG, font=config.FONT_MED).pack(pady=8)
+                pick = _liste_choix(top, "Capteurs détectés :", config.COLOR_SUCCESS,
+                                    440, len(nouveaux) + 1)
 
                 def choose(dev):
                     pick.destroy()
                     _add_ble_sensor(dev["mac"])
 
+                Button(pick, text="Annuler", font=config.FONT_SMALL,
+                          bg=config.COLOR_DANGER, fg="white", bd=0, pady=6,
+                          command=pick.destroy).pack(side="bottom", fill="x", padx=16, pady=(6, 8))
+                choix = ZoneDefilante(pick, config.COLOR_BG)
+                choix.pack(fill="both", expand=True, padx=12)
                 for dev in nouveaux:
-                    Button(pick,
+                    Button(choix.interieur,
                               text=f"{dev['mac']}   {dev['temp']:.1f}°C",
                               font=config.FONT_MED, bg=config.COLOR_CARD,
                               fg=config.COLOR_FG, bd=0, padx=12, pady=8,
                               command=(lambda d=dev: choose(d))
-                              ).pack(fill="x", padx=16, pady=2)
-                Button(pick, text="Annuler", font=config.FONT_SMALL,
-                          bg=config.COLOR_DANGER, fg="white", bd=0, pady=6,
-                          command=pick.destroy).pack(fill="x", padx=16, pady=(6, 8))
+                              ).pack(fill="x", padx=4, pady=2)
+                choix.actualiser()
 
             threading.Thread(target=do, daemon=True).start()
             top.after(200, poll)
@@ -574,12 +606,16 @@ class SettingsScreen(tk.Frame):
         def back_to_settings():
             app._clear()
             app.current = SettingsScreen(app, app.show_menu)
+            ui_common.install_tap_guard(app.current)
 
         self.destroy()
         app.current = CameraScanScreen(app, back_to_settings, test_mode=True)
+        ui_common.install_tap_guard(app.current)
 
     def _quit(self):
-        if confirm(self, "Quitter", "Fermer l'application ?"):
+        self._appui_long = None
+        if confirm(self, "Quitter", "Fermer l'application ?\n"
+                   "Elle ne se relancera qu'au prochain redémarrage du Pi."):
             sys.exit(0)
 
     def _back(self):

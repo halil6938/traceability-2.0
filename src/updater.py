@@ -15,13 +15,13 @@ Garde-fous (une mauvaise version poussee ne doit pas paralyser les magasins) :
 Le redemarrage se fait en sortant en code d'erreur : systemd relance le
 service (Restart=on-failure). Aucun privilege sudo n'est necessaire.
 """
-import logging
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 from . import config, database
+from .journal import journal
 
 RESTART_EXIT_CODE = 42
 # Fichiers/dossiers copies du depot vers le dossier de l'appli
@@ -30,12 +30,7 @@ SYNC_ITEMS = ("main.py", "requirements.txt", "install.sh",
 
 APP_DIR = Path(__file__).resolve().parent.parent
 
-logger = logging.getLogger(__name__)
-if not logger.handlers:
-    _h = logging.FileHandler(config.LOG_DIR / "update.log")
-    _h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-    logger.addHandler(_h)
-    logger.setLevel(logging.INFO)
+logger = journal(__name__, "update.log")
 
 
 def _run(args, cwd=None, timeout=120):

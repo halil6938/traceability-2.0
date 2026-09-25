@@ -13,7 +13,16 @@ Application de traçabilité pour Raspberry Pi 3 (écran tactile 5" 800×480, **
   Paramètres — pour ces deux derniers, suspendu tant qu'une fenêtre (numpad,
   confirmation) est ouverte. Délais réglables à distance (`HISTORY_INACTIVITY_S`,
   `SETTINGS_INACTIVITY_S`).
-- 📄 **Export PDF** par mois sur clé USB (températures + réceptions).
+- 📄 **Export PDF** par mois sur clé USB (températures + réceptions), avec le nom
+  du magasin (`NOM_MAGASIN`, réglable à distance). Les valeurs saisies à l'écran
+  sont marquées d'un `*`, les réceptions au-dessus du maximum du fournisseur en rouge.
+- 🗂 **Rien n'est effacé de l'historique** : retirer un appareil ou un fournisseur
+  le sort des listes, mais ses relevés restent dans l'historique et les PDF (le
+  rajouter sous le même nom le remet en service).
+- 🌡 **Seuil de réception par fournisseur** (Réception ▸ Fournisseurs ▸ Modifier) :
+  une livraison au-dessus du maximum est signalée en rouge.
+- ✍ **Une saisie manuelle prime** : un capteur n'écrase jamais une température
+  saisie à la main le même jour.
 - 🗑 **Purge auto** des photos > 6 mois.
 - 🔒 **Contrôle à distance** : verrou + réglages via `remote_control.json` (voir plus bas).
 
@@ -39,9 +48,12 @@ Nouveau client : copier `_modele.json` en `<hostname>.json` (voir `hostname` sur
   s'affiche. Le blocage est mémorisé localement → il **survit au redémarrage** de
   l'appli et du Pi, et à une coupure internet. Débloquer : remettre `locked: false`.
 - **Régler à distance** (`config`) : liste blanche = `COLOR_*` (format `#rrggbb`),
-  `SCAN_INACTIVITY_S`, `SCREEN_OFF_S`, `RECT_STABLE_FRAMES`, `PHOTO_RETENTION_DAYS`,
+  `STYLE`, `NOM_MAGASIN` (nom imprimé sur les PDF), `SCAN_INACTIVITY_S`,
+  `HISTORY_INACTIVITY_S`, `SETTINGS_INACTIVITY_S`, `NUIT_INACTIVITE_S`,
+  `SCREEN_OFF_S`, `HEARTBEAT_HOUR`, `RECT_STABLE_FRAMES`, `PHOTO_RETENTION_DAYS`,
   `FOCUS_DISTANCE_CM`, `CAMERA_ROTATION`. Une valeur inconnue/invalide est ignorée.
-  Les changements de couleur s'appliquent au retour au menu (ou au redémarrage).
+  Le menu se redessine dès qu'un réglage change. **Retirer une ligne** remet le
+  réglage à sa valeur d'origine (sans redémarrage).
 - Une coupure réseau **conserve le dernier état connu** (jamais de blocage accidentel).
   Un Pi non listé est considéré comme autorisé.
 - ⚠ Blocage **dissuasif** (soft) : un accès physique + technique peut le contourner.
@@ -278,9 +290,28 @@ Si le nom n'a pas été défini au flashage : `bash tools/set_client.sh boucheri
    pour pouvoir verrouiller ce Pi à distance. Sans fichier, il fonctionne
    normalement.
 
+## Fonctionnement de nuit et alertes
+
+- Relevé automatique des capteurs **à partir de 3 h** ; s'il n'a pas pu se faire
+  (Pi éteint, redémarrage), il se fait dès que possible dans la journée.
+- De **22 h à 5 h**, un écran laissé ouvert revient au menu après 30 min sans
+  contact (`NUIT_INACTIVITE_S`) : sinon le Bluetooth resterait réservé (relevé de
+  3 h bloqué) et les mises à jour ne s'installeraient pas.
+- Alertes « trop chaud » **et « trop froid »**, affichées sur n'importe quel écran
+  (elles rallument l'écran en veille).
+- Menu principal : ligne d'alerte pour les relevés manquants et les **piles faibles**
+  (capteurs WiFi Tuya ; les capteurs Bluetooth n'indiquent pas leur pile).
+- **Heure non vérifiée** (en orange dans le menu) : le Pi 3 n'a pas d'horloge
+  interne ; démarré sans internet, il peut être à la mauvaise heure et mal dater
+  relevés, réceptions et photos. Un petit module horloge (RTC, ~5-10 €) évite ce
+  risque.
+
 ## Stockage
 
-- **Carte SD** (`~/traceability/`) : base SQLite (config + relevés), photos en attente si USB absente, logs.
+- **Carte SD** (`~/traceability/`) : base SQLite (config + relevés), photos en attente si USB absente,
+  logs (plafonnés à 500 Ko par fichier, deux anciennes copies). La présence de la
+  clé USB est vérifiée sans y écrire, et rien n'est réécrit en base si rien n'a
+  changé : moins d'usure de la clé et de la carte SD.
 - **Clé USB** (`/media/pi/<VOLUME>/traceability/`) : photos (`photos/YYYY-MM/…jpg`), exports PDF (`exports/`).
 
 Si l'USB est absente au moment d'une photo, elle est stockée localement puis synchronisée automatiquement dès la reconnexion.
@@ -310,7 +341,9 @@ Un assistant demande d'ajouter au moins un appareil (nom, seuil min/max). Modifi
 ## Sortir du plein écran / quitter
 
 - `Échap` : basculer plein écran (pour debug).
-- Quitter l'appli : bouton dans Paramètres.
+- Quitter l'appli : **appui long (3 s)** sur la ligne de version, en bas de
+  Paramètres (réservé à l'installateur : l'appli ne se relance qu'au prochain
+  redémarrage du Pi, et le verrouillage à distance ne s'applique plus).
 
 ## Raccourcis utiles
 

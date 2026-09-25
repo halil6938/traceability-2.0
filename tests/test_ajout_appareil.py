@@ -33,7 +33,7 @@ def find_button(widget, label):
 
 
 # Script : un dialogue apres l'autre (nom -> MIN -> MAX)
-script = [["A", "OK"], ["5", "OK"], ["9", "OK"]]
+script = [["a", "OK"], ["5", "OK"], ["9", "OK"]]
 state = {"i": 0, "vus": []}
 
 
