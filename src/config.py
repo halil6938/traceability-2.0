@@ -98,6 +98,8 @@ COLOR_MUTED = "#94a3b8"
 FONT_TITLE = ("DejaVu Sans", 24, "bold")
 FONT_BIG = ("DejaVu Sans", 20, "bold")
 FONT_MED = ("DejaVu Sans", 14)
+# Largeur des barres de defilement (px) : facile a attraper au doigt
+SCROLLBAR_W = 20
 FONT_SMALL = ("DejaVu Sans", 11)
 
 APP_DIR.mkdir(parents=True, exist_ok=True)

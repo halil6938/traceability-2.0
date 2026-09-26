@@ -504,7 +504,8 @@ class ReceptionHistoryScreen(tk.Frame):
         container = tk.Frame(self, bg=config.COLOR_BG)
         container.pack(fill="both", expand=True, padx=10, pady=6)
         canvas = tk.Canvas(container, bg=config.COLOR_BG, highlightthickness=0)
-        sb = tk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        sb = tk.Scrollbar(container, orient="vertical", width=config.SCROLLBAR_W,
+                          command=canvas.yview)
         self.list_frame = tk.Frame(canvas, bg=config.COLOR_BG)
         self.list_frame.bind("<Configure>",
                              lambda e: canvas.configure(scrollregion=canvas.bbox("all")))

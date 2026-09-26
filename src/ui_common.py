@@ -179,10 +179,12 @@ class ZoneDefilante(tk.Frame):
         self.canvas = tk.Canvas(self, bg=bg, highlightthickness=0,
                                 width=40, height=40)
         self.barre = tk.Scrollbar(self, orient="vertical",
+                                  width=config.SCROLLBAR_W,
                                   command=self.canvas.yview)
         self.canvas.configure(yscrollcommand=self.barre.set)
         if horizontal:
             self.barre_h = tk.Scrollbar(self, orient="horizontal",
+                                        width=config.SCROLLBAR_W,
                                         command=self.canvas.xview)
             self.canvas.configure(xscrollcommand=self.barre_h.set)
             self.barre_h.pack(side="bottom", fill="x")
