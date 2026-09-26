@@ -1,6 +1,5 @@
-"""Verifie le defilement au doigt (bind_drag_scroll) sur les 3 ecrans a
-listes deroulantes : releve du jour, historique des temperatures, historique
-des receptions.
+"""Verifie le defilement au doigt (bind_drag_scroll) sur les ecrans a
+listes deroulantes : tableau des temperatures, historique des receptions.
 - glisser sur une zone libre (Label) fait defiler ;
 - glisser en partant d'un BOUTON ne fait PAS defiler, pour ne jamais gener
   un appui (Modifier/Suppr, cellule du tableau...) ;
@@ -44,40 +43,9 @@ for i in range(25):
                             today - timedelta(days=i % 27))
 
 # =====================================================================
-print("=== 1. Releve du jour (TemperatureScreen) ===")
-from src.ui_temperature import TemperatureScreen  # noqa: E402
-
-scr = TemperatureScreen(root, lambda: None)
-root.update()
-
-# une Label du tableau : element non-bouton, tire de rows_frame
-labels = [w for w in scr.rows_frame.winfo_children()
-         if isinstance(w, tk.Frame)]
-assert labels, "aucune ligne construite"
-premiere_ligne = labels[0]
-une_label = next(w for w in premiere_ligne.winfo_children()
-                 if isinstance(w, tk.Label))
-un_bouton = next(w for w in premiere_ligne.winfo_children()
-                 if est_bouton(w))
-
-avant = scr.canvas.yview()[0]
-glisser_doigt(une_label, -400)   # glisse vers le haut : fait defiler vers le bas
-apres = scr.canvas.yview()[0]
-print(f"1a. glissement sur une Label : {avant:.3f} -> {apres:.3f}")
-assert apres > avant, "le glissement sur une zone libre ne fait pas defiler"
-
-avant2 = scr.canvas.yview()[0]
-glisser_doigt(un_bouton, -400)
-apres2 = scr.canvas.yview()[0]
-print(f"1b. glissement sur un Bouton : {avant2:.3f} -> {apres2:.3f} "
-      "(doit rester identique)")
-assert apres2 == avant2, "un glissement demarre sur un bouton fait defiler"
-
-# =====================================================================
 print("\n=== 2. Historique des temperatures (tableau, cellules = boutons) ===")
 from src.ui_history import TemperatureHistoryScreen  # noqa: E402
 
-scr.destroy()
 scr2 = TemperatureHistoryScreen(root, lambda: None)
 root.update()
 

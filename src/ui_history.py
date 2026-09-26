@@ -26,7 +26,8 @@ def _retour_accueil(master, on_done):
 
 
 class HistoryScreen(tk.Frame):
-    """Menu de choix : Tickets ou Temperatures."""
+    """Menu de choix : Tickets ou Receptions. (Le tableau des temperatures
+    s'ouvre depuis le menu principal, « Relevé de température ».)"""
 
     def __init__(self, master, on_done):
         rounded = config.STYLE == "rounded"
@@ -52,33 +53,26 @@ class HistoryScreen(tk.Frame):
         grid.pack(fill="both", expand=True, padx=20, pady=20)
         grid.columnconfigure(0, weight=1)
         grid.columnconfigure(1, weight=1)
-        grid.columnconfigure(2, weight=1)
         grid.rowconfigure(0, weight=1)
 
         self._big_card(grid, "📷", "Tickets",
                        "Consulter les photos de tickets",
                        config.COLOR_PRIMARY, self._show_tickets
                        ).grid(row=0, column=0, **self._cellule())
-        self._big_card(grid, "🌡", "Temperatures",
-                       "Tableau mensuel des releves",
-                       config.COLOR_SUCCESS, self._show_temperatures
-                       ).grid(row=0, column=1, **self._cellule())
         self._big_card(grid, "📦", "Réceptions",
                        "Relevés des produits livrés",
                        config.COLOR_WARNING, self._show_receptions
-                       ).grid(row=0, column=2, **self._cellule())
+                       ).grid(row=0, column=1, **self._cellule())
 
     def _build_liste(self):
-        """Style arrondi : trois lignes pleines largeur sur fond quasi noir,
+        """Style arrondi : lignes pleine largeur sur fond quasi noir,
         pour ne plus confondre ce menu avec le menu principal (trois tuiles)."""
         lignes = tk.Frame(self, bg=ui_rounded.HIST_FOND)
         lignes.pack(padx=24, pady=(10, 0))
         specs = [
             ("01", "Tickets", "Consulter les photos de tickets",
              config.COLOR_PRIMARY, self._show_tickets),
-            ("02", "Temperatures", "Tableau mensuel des releves",
-             config.COLOR_SUCCESS, self._show_temperatures),
-            ("03", "Réceptions", "Relevés des produits livrés",
+            ("02", "Réceptions", "Relevés des produits livrés",
              config.COLOR_WARNING, self._show_receptions),
         ]
         for i, (num, titre, sous, accent, cmd) in enumerate(specs):
@@ -93,7 +87,7 @@ class HistoryScreen(tk.Frame):
 
     def _big_card(self, parent, icon, title, subtitle, color, command):
         if config.STYLE == "rounded":
-            larg = (config.SCREEN_W - 2 * 20 - 6 * 14) // 3
+            larg = (config.SCREEN_W - 2 * 20 - 4 * 14) // 2
             return ui_rounded.Card(parent, larg, 300, icon, title, subtitle,
                                    color, command)
         card = tk.Frame(parent, bg=color, cursor="hand2")
@@ -111,11 +105,6 @@ class HistoryScreen(tk.Frame):
     def _show_tickets(self):
         self.destroy()
         install_tap_guard(PhotoHistoryScreen(
-            self.master, lambda: _retour_accueil(self.master, self.on_done)))
-
-    def _show_temperatures(self):
-        self.destroy()
-        install_tap_guard(TemperatureHistoryScreen(
             self.master, lambda: _retour_accueil(self.master, self.on_done)))
 
     def _show_receptions(self):
@@ -381,7 +370,7 @@ class TemperatureHistoryScreen(tk.Frame):
         return max(6, min(10, par_colonne // chiffre))
 
     def _render(self):
-        self.title_lbl.config(text=f"Histo. {MONTHS[self.month-1][:4]}. {self.year}")
+        self.title_lbl.config(text=f"Températures {MONTHS[self.month-1][:4]}. {self.year}")
         self.zone.vider()
 
         start = date(self.year, self.month, 1)

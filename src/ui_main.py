@@ -10,8 +10,7 @@ from . import (config, database, heartbeat, network, remote_lock, screen,
                ui_common, ui_rounded, updater, usb_manager)
 from .camera_scan import CameraScanScreen
 from .ui_common import Button, WifiIcon, install_tap_guard
-from .ui_temperature import TemperatureScreen
-from .ui_history import HistoryScreen
+from .ui_history import HistoryScreen, TemperatureHistoryScreen
 from .ui_settings import SettingsScreen
 from .ui_setup import SetupWizard
 from .ui_reception import ReceptionScreen
@@ -107,7 +106,10 @@ class App(tk.Tk):
 
     def show_temperature(self):
         self._clear()
-        self.current = TemperatureScreen(self, self.show_menu)
+        # le releve des capteurs est fait chaque nuit a 3 h : ce menu ouvre le
+        # tableau du mois (consultation, correction a la main), sans relire
+        # les capteurs, ce qui ecrasait le releve de 3 h
+        self.current = TemperatureHistoryScreen(self, self.show_menu)
         install_tap_guard(self.current)
 
     def show_reception(self):
@@ -565,7 +567,7 @@ class MainMenu(tk.Frame):
              config.COLOR_WARNING, self.app.show_reception),
             ("📷", "Scan ticket", "Prendre une photo automatique",
              config.COLOR_PRIMARY, self.app.show_scan),
-            ("🌡", "Relevé de température", "Saisir les temperatures du jour",
+            ("🌡", "Relevé de température", "Tableau du mois",
              config.COLOR_SUCCESS, self.app.show_temperature),
         ]
         for i, (icone, titre, sous, couleur, cmd) in enumerate(specs):
@@ -599,7 +601,7 @@ class MainMenu(tk.Frame):
                        config.COLOR_PRIMARY, self.app.show_scan
                        ).grid(row=0, column=1, sticky="nsew", padx=8, pady=4)
         self._big_card(grid, "🌡", "Relevé de température",
-                       "Saisir les temperatures du jour",
+                       "Tableau du mois",
                        config.COLOR_SUCCESS, self.app.show_temperature
                        ).grid(row=0, column=2, sticky="nsew", padx=8, pady=4)
 

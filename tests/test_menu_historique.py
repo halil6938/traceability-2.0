@@ -1,4 +1,4 @@
-"""Menu Historique : en style arrondi, trois lignes pleine largeur sur fond
+"""Menu Historique : en style arrondi, deux lignes (Tickets, Réceptions) pleine largeur sur fond
 sombre (pour ne plus le confondre avec le menu principal), avec les intitulés
 de l'appli ; l'ancien style reste intact."""
 import tkinter as tk
@@ -33,32 +33,31 @@ assert not lignes(h) and h.cget("bg") == config.COLOR_BG
 print("1. style classique inchange : OK")
 h.destroy()
 
-# 2. style arrondi : 3 lignes, fond sombre, intitules de l'appli, couleurs de l'appli
+# 2. style arrondi : 2 lignes, fond sombre, intitules de l'appli, couleurs de l'appli
 config.STYLE = "rounded"
 h = ui_history.HistoryScreen(root, lambda: None)
 root.update()
 ls = lignes(h)
-assert len(ls) == 3 and h.cget("bg") == ui_rounded.HIST_FOND
+assert len(ls) == 2 and h.cget("bg") == ui_rounded.HIST_FOND
 attendu = [("01", "Tickets", "Consulter les photos de tickets"),
-           ("02", "Temperatures", "Tableau mensuel des releves"),
-           ("03", "Réceptions", "Relevés des produits livrés")]
+           ("02", "Réceptions", "Relevés des produits livrés")]
 for c, (num, titre, sous) in zip(ls, attendu):
     t = textes(c)
     assert num in t and titre in t and sous in t, (t, titre)
-assert [c.winfo_width() for c in ls] == [config.SCREEN_W - 48] * 3
-print("2. 3 lignes pleine largeur, fond sombre, intitules de l'appli : OK")
+assert [c.winfo_width() for c in ls] == [config.SCREEN_W - 48] * 2
+print("2. 2 lignes pleine largeur, fond sombre, intitules de l'appli : OK")
 
 # 3. les lignes ne se chevauchent pas et tiennent sous l'en-tete
 ys = [(c.winfo_y(), c.winfo_y() + c.winfo_height()) for c in ls]
-assert all(ys[i][1] < ys[i + 1][0] for i in range(2)), ys
+assert all(ys[i][1] < ys[i + 1][0] for i in range(len(ys) - 1)), ys
 assert ys[-1][1] < config.SCREEN_H, ys
 print(f"3. tiennent dans l'ecran, espace entre lignes : {ys[1][0] - ys[0][1]} px : OK")
 
 h.destroy()
 
-# 4. un appui ouvre la bonne rubrique (Temperatures puis Receptions)
+# 4. un appui ouvre la bonne rubrique (Tickets puis Receptions)
 ui_common._guard_until = 0.0
-for i, classe in ((1, ui_history.TemperatureHistoryScreen), (2, ui_history.ReceptionHistoryScreen)):
+for i, classe in ((0, ui_history.PhotoHistoryScreen), (1, ui_history.ReceptionHistoryScreen)):
     h = ui_history.HistoryScreen(root, lambda: None)
     root.update()
     c = lignes(h)[i]

@@ -78,7 +78,6 @@ traceability/
 │   ├── tuya_reader.py        # capteurs frigo WiFi Tuya (cloud Smart Life)
 │   ├── sensor_reader.py      # lecture combinee BLE + WiFi
 │   ├── ui_main.py            # menu principal + routeur
-│   ├── ui_temperature.py     # saisie du jour
 │   ├── ui_reception.py       # réception fournisseurs + lecture pistolet
 │   ├── ui_history.py         # tableau mensuel + export
 │   └── ui_settings.py        # gestion appareils
