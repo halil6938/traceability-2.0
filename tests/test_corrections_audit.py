@@ -126,11 +126,15 @@ def ecran(cls):
 
 
 def dessus():
+    """Ecran ou superposition au premier plan, d'apres l'ordre d'empilement de
+    Tk (« winfo children » liste du plus bas au plus haut). Ne depend pas de
+    l'ecran reel du PC : une autre fenetre ouverte par-dessus le test (Chrome...)
+    faisait echouer l'ancienne verification par pointage."""
     app.update()
-    w = app.winfo_containing(app.winfo_rootx() + 400, app.winfo_rooty() + 300)
-    while w is not None and w.master is not app:
-        w = w.master
-    return w
+    visibles = [w for w in app.winfo_children()
+                if w.winfo_ismapped() and w.winfo_width() >= app.winfo_width() - 2
+                and w.winfo_height() >= app.winfo_height() - 2]
+    return visibles[-1] if visibles else None
 
 
 pump(300)
