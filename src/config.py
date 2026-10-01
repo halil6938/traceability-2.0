@@ -43,6 +43,8 @@ SCAN_INACTIVITY_S = 180           # retour auto au menu si aucune etiquette
                                   # detectee pendant ce delai (mode scan)
 HISTORY_INACTIVITY_S = 180        # retour auto au menu si aucun contact (Historique)
 SETTINGS_INACTIVITY_S = 180       # retour auto au menu si aucun contact (Parametres)
+RECEPTION_INACTIVITY_S = 180      # retour auto au menu si aucun contact (Reception) :
+                                  # libere le pistolet et laisse passer les mises a jour
 # La nuit, retour au menu de n'importe quel ecran apres ce delai sans contact :
 # un ecran Reception ou Releve laisse ouvert bloquerait sinon le releve
 # automatique de 3 h (Bluetooth reserve) et les mises a jour.

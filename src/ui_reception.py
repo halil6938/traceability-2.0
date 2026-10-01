@@ -6,7 +6,8 @@ from datetime import date, datetime
 
 from . import config, database, ble_thermo
 from .ui_common import (Button, ZoneDefilante, text_popup, numpad_popup, confirm,
-                        error, open_modal, close_modal)
+                        error, open_modal, close_modal,
+                        schedule_auto_return as auto_return)
 
 # Au-dela, les boutons fournisseurs ne remplissent plus l'ecran : ils gardent
 # une hauteur confortable et la liste defile.
@@ -95,6 +96,10 @@ class ReceptionScreen(tk.Frame):
         # Differe la fenetre d'attente : l'ecran Reception doit d'abord etre
         # dessine, sinon le popup modal ne s'affiche pas.
         self.after(100, self._wait_for_gun)
+        # Retour au menu apres un moment sans contact : sinon l'ecran garde le
+        # pistolet connecte et bloque les mises a jour. Suspendu pendant une
+        # saisie (mesure, pave, gestion des fournisseurs).
+        auto_return(self, config.RECEPTION_INACTIVITY_S, self._back)
 
     # --- connexion persistante au pistolet ---
 

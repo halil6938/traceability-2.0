@@ -9,9 +9,10 @@ Application de traçabilité pour Raspberry Pi 3 (écran tactile 5" 800×480, **
   Une réception oubliée se rattrape depuis **Historique ▸ Réceptions ▸ + Ajouter**
   (fournisseur, jour du mois affiché, température) ; chaque ligne est aussi
   modifiable et supprimable. Les jours à venir ne sont pas sélectionnables.
-- ⏱ **Retour auto au menu** après inactivité, sur Scan ticket, Historique et
-  Paramètres — pour ces deux derniers, suspendu tant qu'une fenêtre (numpad,
-  confirmation) est ouverte. Délais réglables à distance (`HISTORY_INACTIVITY_S`,
+- ⏱ **Retour auto au menu** après 3 min d'inactivité, sur Réception, Scan ticket,
+  Historique (et le tableau du Relevé de température) et Paramètres — suspendu
+  tant qu'une fenêtre (mesure, numpad, confirmation) est ouverte. Délais réglables
+  à distance (`RECEPTION_INACTIVITY_S`, `SCAN_INACTIVITY_S`, `HISTORY_INACTIVITY_S`,
   `SETTINGS_INACTIVITY_S`).
 - 📄 **Export PDF** par mois sur clé USB (températures + réceptions), avec le nom
   du magasin (`NOM_MAGASIN`, réglable à distance). Les valeurs saisies à l'écran
@@ -49,7 +50,8 @@ Nouveau client : copier `_modele.json` en `<hostname>.json` (voir `hostname` sur
   l'appli et du Pi, et à une coupure internet. Débloquer : remettre `locked: false`.
 - **Régler à distance** (`config`) : liste blanche = `COLOR_*` (format `#rrggbb`),
   `STYLE`, `NOM_MAGASIN` (nom imprimé sur les PDF), `SCAN_INACTIVITY_S`,
-  `HISTORY_INACTIVITY_S`, `SETTINGS_INACTIVITY_S`, `NUIT_INACTIVITE_S`,
+  `HISTORY_INACTIVITY_S`, `SETTINGS_INACTIVITY_S`, `RECEPTION_INACTIVITY_S`,
+  `NUIT_INACTIVITE_S`,
   `SCREEN_OFF_S`, `HEARTBEAT_HOUR`, `RECT_STABLE_FRAMES`, `PHOTO_RETENTION_DAYS`,
   `FOCUS_DISTANCE_CM`, `CAMERA_ROTATION`. Une valeur inconnue/invalide est ignorée.
   Le menu se redessine dès qu'un réglage change. **Retirer une ligne** remet le

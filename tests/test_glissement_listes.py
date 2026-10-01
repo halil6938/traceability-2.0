@@ -37,10 +37,11 @@ for i in range(20):
     database.add_device(f"Frigo {i:02d}", 0, 4)
 database.add_supplier("Bigard")
 fournisseur = database.list_suppliers()[0]["id"]
-today = date.today()
+# tout le mois precedent (entierement passe : rempli quel que soit le jour)
+fin_mois_precedent = date.today().replace(day=1) - timedelta(days=1)
 for i in range(25):
     database.save_reception(fournisseur, 4.0 + i * 0.1,
-                            today - timedelta(days=i % 27))
+                            fin_mois_precedent - timedelta(days=i % 27))
 
 # =====================================================================
 print("\n=== 2. Historique des temperatures (tableau, cellules = boutons) ===")
@@ -89,6 +90,7 @@ from src.ui_history import ReceptionHistoryScreen  # noqa: E402
 
 scr2.destroy()
 scr3 = ReceptionHistoryScreen(root, lambda: None)
+scr3._prev_month()
 root.update()
 
 rows = [w for w in scr3.list_frame.winfo_children() if isinstance(w, tk.Frame)]

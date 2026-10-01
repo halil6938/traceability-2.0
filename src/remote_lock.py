@@ -58,6 +58,7 @@ CONFIG_WHITELIST = {
     "COLOR_CARD": _color, "COLOR_MUTED": _color,
     "SCAN_INACTIVITY_S": _posint, "RECT_STABLE_FRAMES": _posint,
     "HISTORY_INACTIVITY_S": _posint, "SETTINGS_INACTIVITY_S": _posint,
+    "RECEPTION_INACTIVITY_S": _posint,
     "STYLE": _style,
     "SCREEN_OFF_S": _posint, "HEARTBEAT_HOUR": _posint,
     "PHOTO_RETENTION_DAYS": _posint, "FOCUS_DISTANCE_CM": _posint,

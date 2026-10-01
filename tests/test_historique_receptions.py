@@ -50,6 +50,11 @@ def driver():
 
 root.after(50, driver)
 
+# Travaille sur le mois PRECEDENT, entierement passe : en debut de mois, le
+# « 3 » du mois en cours est encore a venir, donc non selectionnable.
+scr._prev_month()
+root.update()
+
 print("receptions au depart :", len(database.receptions_in_range(
     date(scr.year, scr.month, 1), date(scr.year, scr.month, 28))))
 
@@ -84,8 +89,9 @@ assert r["temperature"] == 4.5, f"temperature incorrecte : {r['temperature']}"
 
 # --- 4. jours a venir inaccessibles (mois en cours) ---
 today = date.today()
-if scr.year == today.year and scr.month == today.month and today.day < 28:
-    futur = find_button(root, str(today.day + 1))
+scr._next_month()          # retour au mois en cours
+root.update()
+if today.day < 28:
     scr._add()
     root.update()
     find_button(root, "Bigard").invoke()
@@ -96,6 +102,8 @@ if scr.year == today.year and scr.month == today.month and today.day < 28:
     assert etat == "disabled", "un jour futur est selectionnable"
     find_button(root, "Annuler").invoke()
     root.update()
+scr._prev_month()
+root.update()
 
 # --- 5. modification puis suppression ---
 scr._edit(r)               # pave numerique pilote : remet 4.5
