@@ -48,6 +48,12 @@ RECEPTION_INACTIVITY_S = 180      # retour auto au menu si aucun contact (Recept
 # La nuit, retour au menu de n'importe quel ecran apres ce delai sans contact :
 # un ecran Reception ou Releve laisse ouvert bloquerait sinon le releve
 # automatique de 3 h (Bluetooth reserve) et les mises a jour.
+# Releve automatique des capteurs : a partir de 3 h, puis nouvel essai toutes
+# les heures pour les appareils encore sans releve (capteur hors de portee...)
+RELEVE_REESSAI_S = 3600
+# Un appareil equipe d'un capteur sans releve du jour est signale a partir de
+# cette heure (le releve de 3 h et ses nouveaux essais ont alors eu lieu)
+RELEVE_ALERTE_HEURE = 5
 NUIT_HEURES = (22, 5)             # de 22 h a 5 h
 NUIT_INACTIVITE_S = 1800          # 30 min
 SCREEN_OFF_S = 300                # veille de l'ecran apres ce delai sans

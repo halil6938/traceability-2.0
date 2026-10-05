@@ -54,6 +54,10 @@ Nouveau client : copier `_modele.json` en `<hostname>.json` (voir `hostname` sur
   `NUIT_INACTIVITE_S`,
   `SCREEN_OFF_S`, `HEARTBEAT_HOUR`, `RECT_STABLE_FRAMES`, `PHOTO_RETENTION_DAYS`,
   `FOCUS_DISTANCE_CM`, `CAMERA_ROTATION`. Une valeur inconnue/invalide est ignorée.
+  Les nombres sont **bornés** (une faute de frappe ne peut pas tout casser) :
+  retours au menu de 30 s à 1 h, `PHOTO_RETENTION_DAYS` d'au moins 30 jours,
+  `SCREEN_OFF_S` à 0 (jamais) ou de 30 s à 24 h, `HEARTBEAT_HOUR` de 0 à 23,
+  `CAMERA_ROTATION` à 0, 90, 180 ou 270. Une valeur hors limites est ignorée.
   Le menu se redessine dès qu'un réglage change. **Retirer une ligne** remet le
   réglage à sa valeur d'origine (sans redémarrage).
 - Une coupure réseau **conserve le dernier état connu** (jamais de blocage accidentel).
@@ -293,8 +297,13 @@ Si le nom n'a pas été défini au flashage : `bash tools/set_client.sh boucheri
 
 ## Fonctionnement de nuit et alertes
 
-- Relevé automatique des capteurs **à partir de 3 h** ; s'il n'a pas pu se faire
-  (Pi éteint, redémarrage), il se fait dès que possible dans la journée.
+- Relevé automatique des capteurs **à partir de 3 h**. Tant qu'un appareil équipé
+  d'un capteur n'a pas son relevé du jour (capteur hors de portée, Pi éteint…),
+  un **nouvel essai a lieu toutes les heures**, pour ce seul appareil : le relevé
+  de 3 h des autres n'est jamais remplacé.
+- **Relevé manquant** : un appareil équipé d'un capteur est signalé dans le menu
+  dès **5 h** s'il n'a pas son relevé du jour ; un appareil sans capteur (saisi à
+  la main) seulement s'il manque celui de la veille.
 - De **22 h à 5 h**, un écran laissé ouvert revient au menu après 30 min sans
   contact (`NUIT_INACTIVITE_S`) : sinon le Bluetooth resterait réservé (relevé de
   3 h bloqué) et les mises à jour ne s'installeraient pas.
@@ -313,7 +322,22 @@ Si le nom n'a pas été défini au flashage : `bash tools/set_client.sh boucheri
   logs (plafonnés à 500 Ko par fichier, deux anciennes copies). La présence de la
   clé USB est vérifiée sans y écrire, et rien n'est réécrit en base si rien n'a
   changé : moins d'usure de la clé et de la carte SD.
-- **Clé USB** (`/media/pi/<VOLUME>/traceability/`) : photos (`photos/YYYY-MM/…jpg`), exports PDF (`exports/`).
+- **Clé USB** (`/media/pi/<VOLUME>/traceability/`) : photos (`photos/YYYY-MM/…jpg`), exports PDF (`exports/`),
+  **sauvegardes de la base** (`sauvegardes/config_AAAA-MM-JJ.db`).
+
+### Sauvegarde et restauration de la base
+
+Chaque nuit (à partir de 2 h, ou dès que la clé est rebranchée), une copie de la
+base est écrite sur la clé USB ; les **14 dernières** sont gardées. Elle contient
+tout l'historique (relevés, réceptions, appareils, fournisseurs, réglages) mais
+**pas les identifiants** (jeton Telegram, clés Tuya) : la clé reste chez le client.
+
+Restaurer (carte SD changée, base abîmée) :
+
+1. arrêter l'appli : `sudo systemctl stop traceability`
+2. copier la sauvegarde voulue à la place de `~/traceability/config.db`
+3. redémarrer : `sudo systemctl start traceability`
+4. remettre les identifiants : `python3 ~/traceability-app/tools/finaliser.py`
 
 Si l'USB est absente au moment d'une photo, elle est stockée localement puis synchronisée automatiquement dès la reconnexion.
 

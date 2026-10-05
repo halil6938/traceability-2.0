@@ -11,7 +11,10 @@ import numpy as np
 from PIL import Image, ImageTk
 
 from . import config, database, usb_manager
+from .journal import journal
 from .ui_common import Button
+
+logger = journal(__name__, "camera.log")
 
 # Calibration de la mise au point (balayage LensPosition)
 CAL_COARSE_STEPS = 16   # positions balayees en passe large
@@ -152,7 +155,21 @@ class CameraScanScreen(tk.Frame):
         self._absent_count = 0       # frames consecutifs sans etiquette
         self._flash_lbl = None
 
-        self._init_camera()
+        # Camera debranchee, nappe mal enfoncee, ou deja utilisee : l'ecran
+        # doit le dire et garder un retour au menu qui fonctionne. Avant, une
+        # erreur ici laissait un ecran noir qui restait affiche derriere le
+        # menu jusqu'au redemarrage.
+        try:
+            self._init_camera()
+        except Exception as e:
+            logger.error("camera indisponible : %s", e)
+            self._stop = True
+            self.status.config(text="Caméra indisponible", fg=config.COLOR_DANGER)
+            self.preview_label.config(
+                text="📷  Caméra indisponible\n\nVérifiez qu'elle est bien branchée,\n"
+                     "puis redémarrez l'appareil si le problème persiste.",
+                fg="white", font=config.FONT_BIG, justify="center")
+            return
         self.after(10, self._loop)
 
     # --- camera ---

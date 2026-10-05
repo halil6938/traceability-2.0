@@ -175,6 +175,10 @@ def perform_update(target):
         return False
     try:
         _sync_to_app_dir(repo)
+        # Modules d'abord, verification ensuite : verifie avant, un code qui a
+        # besoin d'un NOUVEAU module echouait a tous les coups, etait annule,
+        # et la mise a jour ne pouvait jamais s'installer.
+        _install_requirements(repo, previous, target)
         if not _health_ok():
             raise RuntimeError("le nouveau code ne demarre pas")
     except Exception as e:
@@ -188,14 +192,14 @@ def perform_update(target):
         return False
 
     database.set_meta("deployed_commit", target)
-    _install_requirements(repo, previous, target)
     logger.info("mise a jour %s -> %s appliquee", (previous or "?")[:8], target[:8])
     return True
 
 
 def _install_requirements(repo, previous, target):
     """Installe les nouvelles dependances si requirements.txt a change.
-    Echec non bloquant : le code est deja en place et verifie."""
+    Un echec n'arrete rien ici : la verification qui suit dira si le nouveau
+    code demarre quand meme (sinon, retour a la version precedente)."""
     if not previous:
         return
     r = _git("diff", "--name-only", previous, target)

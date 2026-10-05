@@ -14,7 +14,6 @@ Chaque trame brute est loggee dans logs/ble_thermo.log.
 """
 import asyncio
 import queue
-import re
 import struct
 import threading
 
@@ -60,11 +59,17 @@ def _plausible(v: float) -> bool:
 
 def parse_frame(data: bytes):
     """Extrait une temperature d'une notification.
-    Retourne (valeur, methode) ou None si aucune trame valide."""
+    Retourne (valeur, methode) ou None si aucune trame valide.
+
+    Seule une trame complete au checksum correct est acceptee. Il n'y a plus
+    de decodage « de secours » : il lisait au hasard un chiffre dans les octets
+    d'une trame coupee ou abimee (une vraie mesure de 5,0 °C devenait 2,0 °C,
+    enregistree comme bonne). Une trame invalide est simplement ignoree : le
+    pistolet en emet plusieurs par seconde pendant la mesure."""
     if not data:
         return None
 
-    # 1) Trame HP-985C : en-tete + checksum verifie
+    # Trame HP-985C : en-tete + checksum verifie
     idx = data.find(FRAME_HEADER)
     while idx != -1:
         frame = data[idx:idx + FRAME_LEN]
@@ -76,18 +81,6 @@ def parse_frame(data: bytes):
                     return round(v, 1), f"hp985c@{idx}"
                 logger.warning("trame HP-985C hors plage : %.1f", v)
         idx = data.find(FRAME_HEADER, idx + 1)
-
-    # 2) Secours : trame ASCII (autre modele de thermometre)
-    text = data.decode("ascii", errors="ignore")
-    m = re.search(r"-?\d{1,4}(?:\.\d+)?", text)
-    if m:
-        try:
-            v = float(m.group())
-        except ValueError:
-            return None
-        if _plausible(v):
-            return round(v, 1), f"ascii:{text.strip()!r}"
-
     return None
 
 

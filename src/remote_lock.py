@@ -38,10 +38,30 @@ def _style(v):
     return v
 
 
-def _posint(v):
+def _entre(mini, maxi):
+    """Nombre entier borne. Sans bornes, une faute de frappe dans le fichier
+    GitHub pouvait etre grave : PHOTO_RETENTION_DAYS a 0 effacait la nuit
+    suivante TOUTES les photos de tickets, cle USB comprise."""
+    def conv(v):
+        n = int(v)
+        if not mini <= n <= maxi:
+            raise ValueError(f"hors limites ({mini} a {maxi})")
+        return n
+    return conv
+
+
+def _veille(v):
+    """Delai de mise en veille : 0 (jamais) ou de 30 s a 24 h."""
     n = int(v)
-    if n < 0:
-        raise ValueError("entier negatif")
+    if n != 0 and not 30 <= n <= 86400:
+        raise ValueError("0, ou de 30 a 86400 secondes")
+    return n
+
+
+def _rotation(v):
+    n = int(v)
+    if n not in (0, 90, 180, 270):
+        raise ValueError("0, 90, 180 ou 270")
     return n
 
 
@@ -56,14 +76,18 @@ CONFIG_WHITELIST = {
     "COLOR_BG": _color, "COLOR_FG": _color, "COLOR_PRIMARY": _color,
     "COLOR_SUCCESS": _color, "COLOR_DANGER": _color, "COLOR_WARNING": _color,
     "COLOR_CARD": _color, "COLOR_MUTED": _color,
-    "SCAN_INACTIVITY_S": _posint, "RECT_STABLE_FRAMES": _posint,
-    "HISTORY_INACTIVITY_S": _posint, "SETTINGS_INACTIVITY_S": _posint,
-    "RECEPTION_INACTIVITY_S": _posint,
+    # retours automatiques au menu : de 30 s a 1 h
+    "SCAN_INACTIVITY_S": _entre(30, 3600), "HISTORY_INACTIVITY_S": _entre(30, 3600),
+    "SETTINGS_INACTIVITY_S": _entre(30, 3600),
+    "RECEPTION_INACTIVITY_S": _entre(30, 3600),
+    "NUIT_INACTIVITE_S": _entre(300, 86400),
+    "RECT_STABLE_FRAMES": _entre(1, 50),
     "STYLE": _style,
-    "SCREEN_OFF_S": _posint, "HEARTBEAT_HOUR": _posint,
-    "PHOTO_RETENTION_DAYS": _posint, "FOCUS_DISTANCE_CM": _posint,
-    "CAMERA_ROTATION": _posint,
-    "NOM_MAGASIN": _texte, "NUIT_INACTIVITE_S": _posint,
+    "SCREEN_OFF_S": _veille, "HEARTBEAT_HOUR": _entre(0, 23),
+    # conservation des photos de tickets : jamais moins d'un mois
+    "PHOTO_RETENTION_DAYS": _entre(30, 3650),
+    "FOCUS_DISTANCE_CM": _entre(0, 200), "CAMERA_ROTATION": _rotation,
+    "NOM_MAGASIN": _texte,
 }
 
 

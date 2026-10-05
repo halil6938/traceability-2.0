@@ -39,6 +39,8 @@ class App(tk.Tk):
         self._alarme = None
         self._releve_en_cours = False     # releve automatique en cours (Bluetooth)
         self._sync_en_cours = False       # copie des photos vers la cle en cours
+        self._dernier_essai_releve = 0.0  # dernier essai du releve automatique
+        self._sauvegarde_en_cours = False
 
         # Reglages a distance memorises (couleurs...) : appliques AVANT de
         # construire les ecrans pour qu'ils prennent effet des le demarrage.
@@ -84,6 +86,9 @@ class App(tk.Tk):
 
         # Purge automatique quotidienne des photos > 6 mois
         self.after(8_000, self._purge_tick)
+
+        # Sauvegarde quotidienne de la base sur la cle USB
+        self.after(12_000, self._sauvegarde_tick)
 
         # La nuit, retour au menu de tout ecran laisse ouvert (voir _nuit_tick)
         self.after(60_000, self._nuit_tick)
@@ -148,16 +153,18 @@ class App(tk.Tk):
     # --- Scheduler BLE 3h du matin ---
 
     def _ble_tick(self):
-        """Releve automatique quotidien, a partir de 3 h. S'il n'a pas pu se
-        faire a 3 h (Pi eteint, appli redemarree par une mise a jour), il se
-        fait des que possible dans la journee au lieu d'etre perdu."""
+        """Releve automatique quotidien, a partir de 3 h. La journee n'est
+        consideree comme faite que lorsque TOUS les appareils equipes d'un
+        capteur ont leur releve : sinon un nouvel essai a lieu toutes les heures
+        (capteur momentanement hors de portee, Bluetooth occupe...). Avant, un
+        echec a 3 h n'etait ni retente ni signale avant le lendemain."""
         now = datetime.now()
-        if now.hour >= 3 and not self._releve_en_cours:
-            today = date.today().isoformat()
-            if database.get_meta("ble_auto_date") != today:
-                database.set_meta("ble_auto_date", today)
-                self._releve_en_cours = True
-                threading.Thread(target=self._do_ble_auto, daemon=True).start()
+        if (now.hour >= 3 and not self._releve_en_cours
+                and database.get_meta("ble_auto_date") != date.today().isoformat()
+                and time.time() - self._dernier_essai_releve >= config.RELEVE_REESSAI_S):
+            self._dernier_essai_releve = time.time()
+            self._releve_en_cours = True
+            threading.Thread(target=self._do_ble_auto, daemon=True).start()
         self._check_ble_alert()       # une alerte ne doit pas attendre le menu
         self.after(60_000, self._ble_tick)
 
@@ -169,20 +176,29 @@ class App(tk.Tk):
 
     def _releve_auto(self):
         from . import sensor_reader
-        sensors = database.list_ble_sensors()
-        if not any(s["device_id"] for s in sensors):
-            return
-        try:
-            with config.BLE_LOCK:
-                results, _ = sensor_reader.read_all(sensors)
-        except Exception:
-            return
         today = date.today()
+        jour = today.isoformat()
+        sensors = [s for s in database.list_ble_sensors() if s["device_id"]]
+        if not sensors:
+            database.set_meta("ble_auto_date", jour)
+            return
+        if database.get_meta("ble_auto_essai", "") == jour:
+            # nouvel essai : seulement les appareils encore sans releve du jour
+            # (ne pas remplacer le releve de 3 h par une valeur de la journee)
+            sensors = [s for s in sensors
+                       if database.get_reading(s["device_id"], today) is None]
+        database.set_meta("ble_auto_essai", jour)
+        if sensors:
+            try:
+                with config.BLE_LOCK:
+                    results, _ = sensor_reader.read_all(sensors)
+            except Exception:
+                return                # nouvel essai dans une heure
+        else:
+            results = {}
         devices = {d["id"]: d for d in database.list_devices()}
         alerts = []
         for s in sensors:
-            if not s["device_id"]:
-                continue
             temp = results.get(s["mac"].lower())
             if temp is not None:
                 # une valeur saisie a la main ce jour-la n'est pas ecrasee
@@ -197,6 +213,10 @@ class App(tk.Tk):
                                   f"(min autorisé : {dev['temp_min']:g}°C)")
         if alerts:
             database.set_meta("ble_temp_alert", "\n".join(alerts))
+        # journee faite seulement si chaque appareil equipe a son releve
+        equipes = {s["device_id"] for s in database.list_ble_sensors() if s["device_id"]}
+        if all(database.get_reading(d, today) is not None for d in equipes):
+            database.set_meta("ble_auto_date", jour)
 
     # --- Alarme temperature ---
 
@@ -247,6 +267,30 @@ class App(tk.Tk):
                 database.set_meta("purge_last_date", today)
                 threading.Thread(target=self._do_purge, daemon=True).start()
         self.after(60_000, self._purge_tick)  # verifie chaque minute
+
+    # --- Sauvegarde de la base ---
+
+    def _sauvegarde_tick(self):
+        """Copie quotidienne de la base sur la cle USB, a partir de 2 h (ou des
+        que la cle est rebranchee). Faite en tache de fond."""
+        today = date.today().isoformat()
+        if (datetime.now().hour >= 2 and not self._sauvegarde_en_cours
+                and database.get_meta("sauvegarde_date") != today
+                and usb_manager.find_usb_mount() is not None):
+            self._sauvegarde_en_cours = True
+
+            def faire():
+                from . import sauvegarde
+                try:
+                    if sauvegarde.sauvegarder() is not None:
+                        database.set_meta("sauvegarde_date", today)
+                except Exception as e:
+                    sauvegarde.logger.warning("sauvegarde impossible : %s", e)
+                finally:
+                    self._sauvegarde_en_cours = False
+
+            threading.Thread(target=faire, daemon=True).start()
+        self.after(60_000, self._sauvegarde_tick)
 
     def _do_purge(self):
         try:
@@ -655,11 +699,22 @@ class MainMenu(tk.Frame):
         self.after(3_000, self._refresh_status)
 
     def _check_alerts(self):
-        """Ligne d'alerte : releves manquants, piles faibles des capteurs."""
-        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        """Ligne d'alerte : releves manquants, piles faibles des capteurs.
+        Un appareil equipe d'un capteur doit avoir son releve DU JOUR des 5 h
+        (releve automatique de 3 h) ; un appareil sans capteur, saisi a la main
+        dans la journee, n'est signale que s'il manque celui d'hier."""
+        today = date.today()
+        yesterday = (today - timedelta(days=1)).isoformat()
+        equipes = {s["device_id"] for s in database.list_ble_sensors() if s["device_id"]}
+        if datetime.now().hour >= config.RELEVE_ALERTE_HEURE:
+            limite_capteur = today.isoformat()
+        else:
+            limite_capteur = yesterday
         messages = []
         missing = [info["name"] for info in database.last_reading_date_per_device()
-                   if info["last_date"] is None or info["last_date"] < yesterday]
+                   if info["last_date"] is None
+                   or info["last_date"] < (limite_capteur if info["id"] in equipes
+                                           else yesterday)]
         if missing:
             messages.append("⚠ Relevé manquant : " + _resume(missing))
         try:
