@@ -613,13 +613,13 @@ class MainMenu(tk.Frame):
         cartes = tk.Frame(self, bg=config.COLOR_BG)
         cartes.pack(padx=marge, pady=(6, 0))
         specs = [
-            ("📦", "Réception", "Température des produits livrés",
+            ("🚚", "Réception", "Température des produits livrés",
              config.COLOR_WARNING, self.app.show_reception),
             ("📷", "Scan ticket", "Prendre une photo automatique",
              config.COLOR_PRIMARY, self.app.show_scan),
             ("🌡", "Relevé de température", "Tableau du mois",
              config.COLOR_SUCCESS, self.app.show_temperature),
-            ("🧽", "Nettoyage", "Fiche du jour",
+            ("✨", "Nettoyage", "Fiche du jour",
              config.COLOR_NETTOYAGE, self.app.show_nettoyage),
         ]
         for i, (icone, titre, sous, couleur, cmd) in enumerate(specs):
@@ -645,7 +645,7 @@ class MainMenu(tk.Frame):
         grid.columnconfigure(3, weight=1)
         grid.rowconfigure(0, weight=1)
 
-        self._big_card(grid, "📦", "Réception",
+        self._big_card(grid, "🚚", "Réception",
                        "Température des produits livrés",
                        config.COLOR_WARNING, self.app.show_reception
                        ).grid(row=0, column=0, sticky="nsew", padx=8, pady=4)
@@ -657,7 +657,7 @@ class MainMenu(tk.Frame):
                        "Tableau du mois",
                        config.COLOR_SUCCESS, self.app.show_temperature
                        ).grid(row=0, column=2, sticky="nsew", padx=8, pady=4)
-        self._big_card(grid, "🧽", "Nettoyage", "Fiche du jour",
+        self._big_card(grid, "✨", "Nettoyage", "Fiche du jour",
                        config.COLOR_NETTOYAGE, self.app.show_nettoyage
                        ).grid(row=0, column=3, sticky="nsew", padx=8, pady=4)
 

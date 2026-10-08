@@ -219,7 +219,7 @@ class NettoyageScreen(tk.Frame):
         hdr = tk.Frame(top, bg=config.COLOR_BG)
         hdr.pack(fill="x", padx=10, pady=8)
         onglets = {}
-        for cle, texte in (("operateurs", "👤 Opérateurs"), ("elements", "🧽 Éléments")):
+        for cle, texte in (("operateurs", "👤 Opérateurs"), ("elements", "✨ Éléments")):
             onglets[cle] = Button(hdr, text=texte, font=config.FONT_MED,
                                   bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4,
                                   command=lambda c=cle: changer(c))

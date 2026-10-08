@@ -60,11 +60,11 @@ class HistoryScreen(tk.Frame):
                        "Consulter les photos de tickets",
                        config.COLOR_PRIMARY, self._show_tickets
                        ).grid(row=0, column=0, **self._cellule())
-        self._big_card(grid, "📦", "Réceptions",
+        self._big_card(grid, "🚚", "Réceptions",
                        "Relevés des produits livrés",
                        config.COLOR_WARNING, self._show_receptions
                        ).grid(row=0, column=1, **self._cellule())
-        self._big_card(grid, "🧽", "Nettoyage",
+        self._big_card(grid, "✨", "Nettoyage",
                        "Fiches de suivi du nettoyage",
                        config.COLOR_NETTOYAGE, self._show_nettoyage
                        ).grid(row=0, column=2, **self._cellule())
