@@ -17,8 +17,8 @@ Application de traçabilité pour Raspberry Pi 3 (écran tactile 5" 800×480, **
 - ✨ **Nettoyage** (4e case du menu) : fiche de suivi du nettoyage et de la
   désinfection. L'opérateur choisit son prénom, puis touche la case du jour des
   éléments nettoyés : elle affiche ses initiales. Les 10 jours précédents sont
-  affichés à côté (lecture seule). Seul celui qui a coché peut décocher, le jour
-  même. Opérateurs et éléments se gèrent avec « ⚙ Gérer » (retirés = archivés,
+  affichés à côté et se cochent aussi ; ◀ ▶ remontent plus loin dans le temps.
+  Seul celui qui a coché peut décocher. Opérateurs et éléments se gèrent avec « ⚙ Gérer » (retirés = archivés,
   les fiches passées restent complètes). Historique ▸ Nettoyage : fiche du mois
   et export PDF (`nettoyage_AAAA-MM.pdf`). Retour au menu après 3 min sans
   contact (`NETTOYAGE_INACTIVITY_S`) : l'opérateur suivant doit s'identifier.

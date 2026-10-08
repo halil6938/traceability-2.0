@@ -97,11 +97,10 @@ assert ecran.operateur["id"] == hamza["id"]
 cases = ecran._cases
 assert set(cases) == {machine["id"], vitrine["id"], sol["id"]}
 assert all(visible(c) for c in cases.values()), "case du jour hors de l'ecran"
-# la colonne de la veille montre les initiales d'Emre, en lecture seule
-textes = [w.cget("text") for w in tous(ecran) if not est_bouton(w)
-          and w.winfo_class() == "Label"]
-assert "EC" in textes, "le nettoyage de la veille n'apparait pas"
-print("3. tableau : colonne du jour + jours passes (lecture seule) : OK")
+# la colonne de la veille montre les initiales d'Emre
+veille = ecran._toutes[(vitrine["id"], hier.isoformat())]
+assert veille.cget("text") == "EC", "le nettoyage de la veille n'apparait pas"
+print("3. tableau : colonne du jour + jours passes : OK")
 
 cases[machine["id"]].invoke(); pump()
 assert cases[machine["id"]].cget("text") == "HU"
@@ -113,6 +112,27 @@ assert cases[machine["id"]].cget("text") == ""
 assert not database.nettoyages_periode(aujourd_hui, aujourd_hui)
 cases[machine["id"]].invoke(); pump()
 print("4. case cochee avec ses initiales, decochee par lui-meme : OK")
+
+# n'importe quel jour : une case passee se coche aussi...
+ecran._toutes[(sol["id"], hier.isoformat())].invoke(); pump()
+assert database.nettoyages_periode(hier, hier)[(sol["id"], hier.isoformat())][
+    "operateur_id"] == hamza["id"]
+assert ecran._toutes[(sol["id"], hier.isoformat())].cget("text") == "HU"
+# ... et ◀ remonte plus loin que les jours affiches
+assert visible(bouton(ecran, "◀")) and visible(bouton(ecran, "▶"))
+loin = aujourd_hui - timedelta(days=config.NETTOYAGE_JOURS_PASSES + 3)
+while (sol["id"], loin.isoformat()) not in ecran._toutes:
+    bouton(ecran, "◀").invoke(); pump()
+assert ecran.jour_affiche < aujourd_hui
+ecran._toutes[(sol["id"], loin.isoformat())].invoke(); pump()
+assert (sol["id"], loin.isoformat()) in database.nettoyages_periode(loin, loin)
+ecran._toutes[(sol["id"], loin.isoformat())].invoke(); pump()      # decoche
+assert not database.nettoyages_periode(loin, loin)
+for _ in range(10):                                   # ▶ : jamais apres aujourd'hui
+    bouton(ecran, "▶").invoke(); pump()
+assert ecran.jour_affiche == aujourd_hui and machine["id"] in ecran._cases
+assert (machine["id"], (aujourd_hui + timedelta(days=1)).isoformat()) not in ecran._toutes
+print("4b. n'importe quel jour se coche (jours affiches, ◀ ▶) : OK")
 
 # un autre operateur ne peut pas decocher la case de Hamza
 bouton(ecran, "Changer d'opérateur").invoke(); pump()

@@ -2,8 +2,9 @@
 
 L'operateur s'identifie (choix de son prenom), puis coche, dans la colonne du
 jour, les elements qu'il a nettoyes : la case affiche ses initiales, comme sur
-la fiche papier. Les jours precedents sont affiches a cote, en lecture seule.
-Une case ne peut etre decochee que le jour meme, et par celui qui l'a cochee.
+la fiche papier. Les jours precedents sont affiches a cote et se cochent de
+la meme facon ; ◀ ▶ remontent plus loin dans le temps. Une case ne peut etre
+decochee que par celui qui l'a cochee.
 """
 import tkinter as tk
 import tkinter.font as tkfont
@@ -15,7 +16,7 @@ from .ui_common import (Button, ZoneDefilante, text_popup, confirm, error, info,
 
 JOURS_SEMAINE = ("lu", "ma", "me", "je", "ve", "sa", "di")
 LARGEUR_NOM = 150          # colonne des elements (px)
-LARGEUR_AUJOURDHUI = 96    # colonne du jour, la seule cochable
+LARGEUR_AUJOURDHUI = 96    # grande colonne (le jour affiche)
 LARGEUR_PASSE_MIN = 40     # en dessous, on affiche moins de jours passes
 HAUTEUR_LIGNE = 46
 MAX_OPERATEURS_SANS_DEFILEMENT = 12
@@ -44,7 +45,9 @@ class NettoyageScreen(tk.Frame):
         super().__init__(master, bg=config.COLOR_BG)
         self.on_done = on_done
         self.operateur = None
-        self._cases = {}           # element_id -> bouton de la colonne du jour
+        self._cases = {}           # element_id -> bouton de la grande colonne
+        self._toutes = {}          # (element_id, 'AAAA-MM-JJ') -> bouton
+        self.jour_affiche = date.today()
         auto_return(self, config.NETTOYAGE_INACTIVITY_S, self._back)
         self.pack(fill="both", expand=True)
 
@@ -67,6 +70,7 @@ class NettoyageScreen(tk.Frame):
         for w in self.corps.winfo_children():
             w.destroy()
         self._cases = {}
+        self._toutes = {}
 
     # --- 1. qui etes-vous ? ---
 
@@ -105,6 +109,7 @@ class NettoyageScreen(tk.Frame):
 
     def _choisir(self, operateur):
         self.operateur = operateur
+        self.jour_affiche = date.today()
         self._afficher_tableau()
 
     # --- 2. le tableau ---
@@ -119,8 +124,6 @@ class NettoyageScreen(tk.Frame):
         Button(barre, text="Changer d'opérateur", font=config.FONT_SMALL,
                bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4,
                command=self._afficher_choix).pack(side="right")
-        tk.Label(barre, text="Touchez la case du jour", bg=config.COLOR_BG,
-                 fg=config.COLOR_MUTED, font=config.FONT_SMALL).pack(side="right", padx=10)
 
         elements = database.list_elements()
         if not elements:
@@ -133,9 +136,24 @@ class NettoyageScreen(tk.Frame):
         aujourd_hui = date.today()
         dispo = config.SCREEN_W - 20 - config.SCROLLBAR_W - 4
         n_passes, larg_passe = colonnes(dispo, config.NETTOYAGE_JOURS_PASSES)
-        jours = [aujourd_hui - timedelta(days=k) for k in range(n_passes, 0, -1)]
-        faits = database.nettoyages_periode(jours[0] if jours else aujourd_hui,
-                                            aujourd_hui)
+        # le jour de la grande colonne : aujourd'hui, ou plus tot si on a
+        # remonte le temps avec ◀ (n'importe quel jour peut etre saisi)
+        fin = min(self.jour_affiche, aujourd_hui)
+        jours = [fin - timedelta(days=k) for k in range(n_passes, 0, -1)]
+
+        # navigation : une page de jours a la fois
+        page = n_passes + 1
+        suivant = Button(barre, text="▶", font=config.FONT_MED,
+                         bg=config.COLOR_CARD if fin < aujourd_hui else config.COLOR_BG,
+                         fg="white" if fin < aujourd_hui else config.COLOR_MUTED,
+                         bd=0, padx=12, pady=4,
+                         command=lambda: self._decaler(page))
+        suivant.pack(side="right", padx=(4, 10))
+        Button(barre, text="◀", font=config.FONT_MED, bg=config.COLOR_CARD, fg="white",
+               bd=0, padx=12, pady=4,
+               command=lambda: self._decaler(-page)).pack(side="right")
+
+        faits = database.nettoyages_periode(jours[0] if jours else fin, fin)
         largeurs = [LARGEUR_NOM] + [larg_passe] * n_passes + [LARGEUR_AUJOURDHUI]
 
         # en-tete (hors de la zone qui defile : il reste visible)
@@ -150,7 +168,9 @@ class NettoyageScreen(tk.Frame):
             tk.Label(entete, text=f"{JOURS_SEMAINE[jour.weekday()]}\n{jour.day:02d}",
                      bg=config.COLOR_BG, fg=config.COLOR_MUTED,
                      font=config.FONT_SMALL).grid(row=0, column=i, sticky="nsew")
-        tk.Label(entete, text=f"Aujourd'hui\n{aujourd_hui.strftime('%d/%m')}",
+        titre = ("Aujourd'hui" if fin == aujourd_hui
+                 else f"{JOURS_SEMAINE[fin.weekday()]}.")
+        tk.Label(entete, text=f"{titre}\n{fin.strftime('%d/%m')}",
                  bg=config.COLOR_NETTOYAGE, fg="white", font=config.FONT_SMALL
                  ).grid(row=0, column=n_passes + 1, sticky="nsew", padx=2)
 
@@ -166,22 +186,33 @@ class NettoyageScreen(tk.Frame):
             tk.Label(ligne, text=e["nom"], bg=config.COLOR_CARD, fg=config.COLOR_FG,
                      font=_police_nom(e["nom"]), anchor="w", wraplength=LARGEUR_NOM - 10,
                      justify="left").grid(row=0, column=0, sticky="w", padx=6)
-            for i, jour in enumerate(jours, start=1):
-                fait = faits.get((e["id"], jour.isoformat()))
-                tk.Label(ligne, text=fait["initiales"] if fait else "·",
-                         bg=config.COLOR_CARD,
-                         fg=config.COLOR_SUCCESS if fait else config.COLOR_MUTED,
-                         font=config.FONT_SMALL).grid(row=0, column=i, sticky="nsew")
-            case = Button(ligne, text="", font=config.FONT_BIG, bg=config.COLOR_BG,
-                          fg="white", bd=0,
-                          command=lambda el=e: self._toucher(el))
-            case.grid(row=0, column=n_passes + 1, sticky="nsew", padx=4, pady=3)
-            self._cases[e["id"]] = case
-            self._dessiner_case(e["id"], faits.get((e["id"], aujourd_hui.isoformat())))
+            for i, jour in enumerate(jours + [fin], start=1):
+                grande = jour == fin
+                # cases carrees dans les deux styles : une vraie grille, comme
+                # la fiche papier
+                case = tk.Button(ligne, text="", bd=0, relief="flat", fg="white",
+                                 bg=config.COLOR_BG, activeforeground="white",
+                                 activebackground=config.COLOR_MUTED,
+                                 highlightthickness=0, padx=0, pady=0,
+                                 font=config.FONT_BIG if grande else config.FONT_SMALL,
+                                 command=lambda el=e, j=jour: self._toucher(el, j))
+                case.grid(row=0, column=i, sticky="nsew",
+                          padx=4 if grande else 1, pady=3 if grande else 6)
+                self._toutes[(e["id"], jour.isoformat())] = case
+                if grande:
+                    self._cases[e["id"]] = case
+                self._dessiner_case(e["id"], jour, faits.get((e["id"], jour.isoformat())))
         zone.actualiser()
 
-    def _dessiner_case(self, element_id, fait):
-        case = self._cases.get(element_id)
+    def _decaler(self, jours):
+        """Remonte (ou redescend) le temps d'une page de jours, sans depasser
+        aujourd'hui."""
+        aujourd_hui = date.today()
+        self.jour_affiche = min(self.jour_affiche + timedelta(days=jours), aujourd_hui)
+        self._afficher_tableau()
+
+    def _dessiner_case(self, element_id, jour, fait):
+        case = self._toutes.get((element_id, jour.isoformat()))
         if case is None:
             return
         if fait:
@@ -189,26 +220,27 @@ class NettoyageScreen(tk.Frame):
         else:
             case.config(text="", bg=config.COLOR_BG)
 
-    def _toucher(self, element):
-        """Coche la case du jour, ou la decoche si c'est cet operateur qui
+    def _toucher(self, element, jour):
+        """Coche la case de ce jour, ou la decoche si c'est cet operateur qui
         l'avait cochee (erreur de case)."""
         op = self.operateur
         if op is None:
             return
-        aujourd_hui = date.today()
-        cle = (element["id"], aujourd_hui.isoformat())
-        fait = database.nettoyages_periode(aujourd_hui, aujourd_hui).get(cle)
+        cle = (element["id"], jour.isoformat())
+        fait = database.nettoyages_periode(jour, jour).get(cle)
         if fait is None:
-            database.cocher_nettoyage(element["id"], aujourd_hui, op["id"])
+            database.cocher_nettoyage(element["id"], jour, op["id"])
         elif fait["operateur_id"] == op["id"]:
-            database.decocher_nettoyage(element["id"], aujourd_hui, op["id"])
+            database.decocher_nettoyage(element["id"], jour, op["id"])
         else:
+            quand = ("aujourd'hui" if jour == date.today()
+                     else f"le {jour.strftime('%d/%m')}")
             info(self, "Déjà fait",
-                 f"« {element['nom']} » a déjà été nettoyé aujourd'hui\n"
+                 f"« {element['nom']} » a déjà été nettoyé {quand}\n"
                  f"par {fait['nom']} ({fait['initiales']}).")
             return
-        self._dessiner_case(element["id"],
-                            database.nettoyages_periode(aujourd_hui, aujourd_hui).get(cle))
+        self._dessiner_case(element["id"], jour,
+                            database.nettoyages_periode(jour, jour).get(cle))
 
     # --- gestion des listes ---
 
