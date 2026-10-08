@@ -14,6 +14,7 @@ from .ui_history import HistoryScreen, TemperatureHistoryScreen
 from .ui_settings import SettingsScreen
 from .ui_setup import SetupWizard
 from .ui_reception import ReceptionScreen
+from .ui_nettoyage import NettoyageScreen
 
 
 class App(tk.Tk):
@@ -120,6 +121,11 @@ class App(tk.Tk):
     def show_reception(self):
         self._clear()
         self.current = ReceptionScreen(self, self.show_menu)
+        install_tap_guard(self.current)
+
+    def show_nettoyage(self):
+        self._clear()
+        self.current = NettoyageScreen(self, self.show_menu)
         install_tap_guard(self.current)
 
     def show_history(self):
@@ -602,7 +608,7 @@ class MainMenu(tk.Frame):
     def _build_rounded(self):
         """Cases aux coins arrondis qui s'enfoncent au toucher."""
         marge, ecart = 20, 28           # espace large : le doigt deborde
-        larg = (config.SCREEN_W - 2 * marge - 2 * ecart) // 3
+        larg = (config.SCREEN_W - 2 * marge - 3 * ecart) // 4
         haut = config.SCREEN_H - 206
         cartes = tk.Frame(self, bg=config.COLOR_BG)
         cartes.pack(padx=marge, pady=(6, 0))
@@ -613,6 +619,8 @@ class MainMenu(tk.Frame):
              config.COLOR_PRIMARY, self.app.show_scan),
             ("🌡", "Relevé de température", "Tableau du mois",
              config.COLOR_SUCCESS, self.app.show_temperature),
+            ("🧽", "Nettoyage", "Fiche du jour",
+             config.COLOR_NETTOYAGE, self.app.show_nettoyage),
         ]
         for i, (icone, titre, sous, couleur, cmd) in enumerate(specs):
             ui_rounded.Card(cartes, larg, haut, icone, titre, sous, couleur,
@@ -634,6 +642,7 @@ class MainMenu(tk.Frame):
         grid.columnconfigure(0, weight=1)
         grid.columnconfigure(1, weight=1)
         grid.columnconfigure(2, weight=1)
+        grid.columnconfigure(3, weight=1)
         grid.rowconfigure(0, weight=1)
 
         self._big_card(grid, "📦", "Réception",
@@ -648,6 +657,9 @@ class MainMenu(tk.Frame):
                        "Tableau du mois",
                        config.COLOR_SUCCESS, self.app.show_temperature
                        ).grid(row=0, column=2, sticky="nsew", padx=8, pady=4)
+        self._big_card(grid, "🧽", "Nettoyage", "Fiche du jour",
+                       config.COLOR_NETTOYAGE, self.app.show_nettoyage
+                       ).grid(row=0, column=3, sticky="nsew", padx=8, pady=4)
 
         # Bas : historique + parametres
         bottom = tk.Frame(self, bg=config.COLOR_BG)
@@ -665,9 +677,9 @@ class MainMenu(tk.Frame):
         tk.Label(card, text=icon, bg=color, fg="white",
                  font=("DejaVu Sans", 48)).pack(pady=(20, 0))
         tk.Label(card, text=title, bg=color, fg="white",
-                 font=config.FONT_BIG, wraplength=220).pack()
+                 font=ui_rounded.police_titre(title, 150), wraplength=160).pack()
         tk.Label(card, text=subtitle, bg=color, fg="white",
-                 font=config.FONT_SMALL, wraplength=220).pack(pady=(4, 0))
+                 font=config.FONT_SMALL, wraplength=160).pack(pady=(4, 0))
         for w in card.winfo_children():
             w.bind("<Button-1>", lambda e: command())
         return card

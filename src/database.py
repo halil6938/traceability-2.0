@@ -89,6 +89,40 @@ def init_db():
         # Temperature maximale acceptee a la reception (vide = pas de controle)
         _ajouter_colonne(c, "suppliers", "temp_max", "REAL")
 
+        # Fiche de suivi du nettoyage : qui (operateurs), quoi (elements a
+        # nettoyer), et une case par element et par jour, comme sur papier.
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS nettoyage_operateurs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nom TEXT NOT NULL UNIQUE,
+                initiales TEXT NOT NULL,
+                position INTEGER NOT NULL DEFAULT 0,
+                archived INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS nettoyage_elements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                nom TEXT NOT NULL UNIQUE,
+                position INTEGER NOT NULL DEFAULT 0,
+                archived INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS nettoyages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                element_id INTEGER NOT NULL,
+                jour TEXT NOT NULL,
+                operateur_id INTEGER NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(element_id) REFERENCES nettoyage_elements(id),
+                FOREIGN KEY(operateur_id) REFERENCES nettoyage_operateurs(id),
+                UNIQUE(element_id, jour)
+            )
+        """)
+
 
 def _ajouter_colonne(c, table, colonne, definition):
     cols = [r[1] for r in c.execute(f"PRAGMA table_info({table})").fetchall()]
@@ -411,6 +445,144 @@ def add_sensor(mac: str, label: str, kind: str = "ble"):
 def delete_sensor(sensor_id: int):
     with connect() as c:
         c.execute("DELETE FROM ble_sensors WHERE id=?", (sensor_id,))
+
+
+# ---------- Nettoyage ----------
+# Operateurs et elements retires sont archives, jamais effaces : la fiche d'un
+# mois passe doit rester complete (controles sanitaires).
+
+def initiales_par_defaut(nom: str) -> str:
+    """« Hamza Uysal » -> « HU » ; « Hamza » -> « HA »."""
+    mots = [m for m in nom.replace("-", " ").split() if m]
+    if not mots:
+        return ""
+    if len(mots) == 1:
+        return mots[0][:2].upper()
+    return "".join(m[0] for m in mots[:3]).upper()
+
+
+def _lister(table, include_archived):
+    sql = f"SELECT * FROM {table}"
+    if not include_archived:
+        sql += " WHERE archived = 0"
+    with connect() as c:
+        return [dict(r) for r in c.execute(sql + " ORDER BY position, nom").fetchall()]
+
+
+def _ajouter(table, nom, colonnes=(), valeurs=()):
+    """Ajoute une ligne, ou remet en service une ligne archivee du meme nom."""
+    nom = nom.strip()
+    with connect() as c:
+        ancien = c.execute(f"SELECT id FROM {table} WHERE nom=? AND archived=1",
+                           (nom,)).fetchone()
+        if ancien:
+            sets = "".join(f", {col}=?" for col in colonnes)
+            c.execute(f"UPDATE {table} SET archived=0{sets} WHERE id=?",
+                      (*valeurs, ancien["id"]))
+            return
+        pos = c.execute(f"SELECT COALESCE(MAX(position), 0) + 1 FROM {table}").fetchone()[0]
+        cols = "".join(f", {col}" for col in colonnes)
+        marques = ", ?" * len(colonnes)
+        c.execute(f"INSERT INTO {table}(nom{cols}, position, created_at) "
+                  f"VALUES (?{marques}, ?, ?)",
+                  (nom, *valeurs, pos, datetime.now().isoformat()))
+
+
+def list_operateurs(include_archived=False):
+    return _lister("nettoyage_operateurs", include_archived)
+
+
+def add_operateur(nom: str, initiales: str):
+    _ajouter("nettoyage_operateurs", nom, ("initiales",),
+             (initiales.strip().upper() or initiales_par_defaut(nom),))
+
+
+def update_operateur(operateur_id: int, nom: str, initiales: str):
+    with connect() as c:
+        c.execute("UPDATE nettoyage_operateurs SET nom=?, initiales=? WHERE id=?",
+                  (nom.strip(), initiales.strip().upper() or initiales_par_defaut(nom),
+                   operateur_id))
+
+
+def archive_operateur(operateur_id: int):
+    with connect() as c:
+        c.execute("UPDATE nettoyage_operateurs SET archived=1 WHERE id=?", (operateur_id,))
+
+
+def list_elements(include_archived=False):
+    return _lister("nettoyage_elements", include_archived)
+
+
+def add_element(nom: str):
+    _ajouter("nettoyage_elements", nom)
+
+
+def update_element(element_id: int, nom: str):
+    with connect() as c:
+        c.execute("UPDATE nettoyage_elements SET nom=? WHERE id=?", (nom.strip(), element_id))
+
+
+def archive_element(element_id: int):
+    with connect() as c:
+        c.execute("UPDATE nettoyage_elements SET archived=1 WHERE id=?", (element_id,))
+
+
+def deplacer_element(element_id: int, sens: int):
+    """Monte (sens=-1) ou descend (+1) un element dans la liste."""
+    elements = list_elements()
+    ids = [e["id"] for e in elements]
+    i = ids.index(element_id)
+    j = i + sens
+    if not 0 <= j < len(ids):
+        return
+    ids[i], ids[j] = ids[j], ids[i]
+    with connect() as c:
+        for pos, eid in enumerate(ids, start=1):
+            c.execute("UPDATE nettoyage_elements SET position=? WHERE id=?", (pos, eid))
+
+
+def elements_pour_periode(debut: date, fin: date):
+    """Elements en service, plus ceux retires qui ont ete nettoyes sur la
+    periode : la fiche d'un mois passe reste complete."""
+    with connect() as c:
+        return [dict(r) for r in c.execute(
+            """SELECT * FROM nettoyage_elements e
+               WHERE e.archived = 0 OR EXISTS (
+                   SELECT 1 FROM nettoyages n WHERE n.element_id = e.id
+                   AND n.jour BETWEEN ? AND ?)
+               ORDER BY e.position, e.nom""",
+            (debut.isoformat(), fin.isoformat())).fetchall()]
+
+
+def nettoyages_periode(debut: date, fin: date):
+    """{(element_id, 'AAAA-MM-JJ'): {operateur_id, initiales, nom}}."""
+    with connect() as c:
+        rows = c.execute(
+            """SELECT n.element_id, n.jour, n.operateur_id, o.initiales, o.nom
+               FROM nettoyages n JOIN nettoyage_operateurs o ON o.id = n.operateur_id
+               WHERE n.jour BETWEEN ? AND ?""",
+            (debut.isoformat(), fin.isoformat())).fetchall()
+        return {(r["element_id"], r["jour"]): dict(r) for r in rows}
+
+
+def cocher_nettoyage(element_id: int, jour: date, operateur_id: int) -> bool:
+    """Enregistre que l'element a ete nettoye ce jour-la. False si la case
+    etait deja cochee (par n'importe qui)."""
+    with connect() as c:
+        r = c.execute(
+            "INSERT OR IGNORE INTO nettoyages(element_id, jour, operateur_id, created_at) "
+            "VALUES (?,?,?,?)",
+            (element_id, jour.isoformat(), operateur_id, datetime.now().isoformat()))
+        return r.rowcount == 1
+
+
+def decocher_nettoyage(element_id: int, jour: date, operateur_id: int) -> bool:
+    """Annule une case, seulement si c'est bien cet operateur qui l'a cochee."""
+    with connect() as c:
+        r = c.execute(
+            "DELETE FROM nettoyages WHERE element_id=? AND jour=? AND operateur_id=?",
+            (element_id, jour.isoformat(), operateur_id))
+        return r.rowcount == 1
 
 
 # ---------- Meta ----------

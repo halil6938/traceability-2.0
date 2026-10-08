@@ -26,8 +26,8 @@ def _retour_accueil(master, on_done):
 
 
 class HistoryScreen(tk.Frame):
-    """Menu de choix : Tickets ou Receptions. (Le tableau des temperatures
-    s'ouvre depuis le menu principal, « Relevé de température ».)"""
+    """Menu de choix : Tickets, Receptions ou Nettoyage. (Le tableau des
+    temperatures s'ouvre depuis le menu principal, « Relevé de température ».)"""
 
     def __init__(self, master, on_done):
         rounded = config.STYLE == "rounded"
@@ -53,6 +53,7 @@ class HistoryScreen(tk.Frame):
         grid.pack(fill="both", expand=True, padx=20, pady=20)
         grid.columnconfigure(0, weight=1)
         grid.columnconfigure(1, weight=1)
+        grid.columnconfigure(2, weight=1)
         grid.rowconfigure(0, weight=1)
 
         self._big_card(grid, "📷", "Tickets",
@@ -63,6 +64,10 @@ class HistoryScreen(tk.Frame):
                        "Relevés des produits livrés",
                        config.COLOR_WARNING, self._show_receptions
                        ).grid(row=0, column=1, **self._cellule())
+        self._big_card(grid, "🧽", "Nettoyage",
+                       "Fiches de suivi du nettoyage",
+                       config.COLOR_NETTOYAGE, self._show_nettoyage
+                       ).grid(row=0, column=2, **self._cellule())
 
     def _build_liste(self):
         """Style arrondi : lignes pleine largeur sur fond quasi noir,
@@ -74,6 +79,8 @@ class HistoryScreen(tk.Frame):
              config.COLOR_PRIMARY, self._show_tickets),
             ("02", "Réceptions", "Relevés des produits livrés",
              config.COLOR_WARNING, self._show_receptions),
+            ("03", "Nettoyage", "Fiches de suivi du nettoyage",
+             config.COLOR_NETTOYAGE, self._show_nettoyage),
         ]
         for i, (num, titre, sous, accent, cmd) in enumerate(specs):
             ui_rounded.Ligne(lignes, config.SCREEN_W - 48, 116, num, titre, sous,
@@ -87,7 +94,7 @@ class HistoryScreen(tk.Frame):
 
     def _big_card(self, parent, icon, title, subtitle, color, command):
         if config.STYLE == "rounded":
-            larg = (config.SCREEN_W - 2 * 20 - 4 * 14) // 2
+            larg = (config.SCREEN_W - 2 * 20 - 6 * 14) // 3
             return ui_rounded.Card(parent, larg, 300, icon, title, subtitle,
                                    color, command)
         card = tk.Frame(parent, bg=color, cursor="hand2")
@@ -110,6 +117,11 @@ class HistoryScreen(tk.Frame):
     def _show_receptions(self):
         self.destroy()
         install_tap_guard(ReceptionHistoryScreen(
+            self.master, lambda: _retour_accueil(self.master, self.on_done)))
+
+    def _show_nettoyage(self):
+        self.destroy()
+        install_tap_guard(NettoyageHistoryScreen(
             self.master, lambda: _retour_accueil(self.master, self.on_done)))
 
     def _back(self):
@@ -674,6 +686,111 @@ class ReceptionHistoryScreen(tk.Frame):
     def _export(self):
         try:
             path = pdf_export.export_month_pdf(self.year, self.month)
+        except Exception as e:
+            error(self, "Erreur export", str(e))
+            return
+        if path is None:
+            error(self, "USB absente", "Branchez une cle USB pour exporter.")
+            return
+        info(self, "Export OK", f"Fichier enregistre :\n{path.name}")
+
+    def _back(self):
+        self.destroy()
+        self.on_done()
+
+
+# ---------------------------------------------------------------------------
+# Fiches de nettoyage
+# ---------------------------------------------------------------------------
+
+class NettoyageHistoryScreen(tk.Frame):
+    """Fiche de suivi du nettoyage d'un mois : elements en lignes, jours en
+    colonnes, initiales de l'operateur dans chaque case (lecture seule)."""
+
+    LARGEUR_NOM = 150
+    LARGEUR_JOUR = 34
+
+    def __init__(self, master, on_done):
+        super().__init__(master, bg=config.COLOR_BG)
+        self.on_done = on_done
+        auto_return(self, config.HISTORY_INACTIVITY_S, self._back)
+        self.pack(fill="both", expand=True)
+        today = date.today()
+        self.year, self.month = today.year, today.month
+
+        header = tk.Frame(self, bg=config.COLOR_BG)
+        header.pack(fill="x", padx=10, pady=6)
+        Button(header, text="← Retour", font=config.FONT_MED,
+               bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4,
+               command=self._back).pack(side="left")
+        self.title_lbl = tk.Label(header, text="", bg=config.COLOR_BG,
+                                  fg=config.COLOR_FG, font=config.FONT_MED)
+        self.title_lbl.pack(side="left", padx=8)
+        Button(header, text="Export PDF", font=config.FONT_MED,
+               bg=config.COLOR_SUCCESS, fg="white", bd=0, padx=10, pady=4,
+               command=self._export).pack(side="right", padx=4)
+
+        nav = tk.Frame(self, bg=config.COLOR_BG)
+        nav.pack(fill="x", padx=10)
+        Button(nav, text="◀ Mois precedent", font=config.FONT_MED,
+               bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4,
+               command=self._prev_month).pack(side="left")
+        Button(nav, text="Mois suivant ▶", font=config.FONT_MED,
+               bg=config.COLOR_CARD, fg="white", bd=0, padx=10, pady=4,
+               command=self._next_month).pack(side="right")
+
+        self.zone = ZoneDefilante(self, config.COLOR_BG, horizontal=True)
+        self.zone.pack(fill="both", expand=True, padx=10, pady=6)
+        self._render()
+
+    def _prev_month(self):
+        self.month -= 1
+        if self.month < 1:
+            self.month, self.year = 12, self.year - 1
+        self._render()
+
+    def _next_month(self):
+        self.month += 1
+        if self.month > 12:
+            self.month, self.year = 1, self.year + 1
+        self._render()
+
+    def _render(self):
+        self.title_lbl.config(text=f"Nettoyage {MONTHS[self.month - 1]} {self.year}")
+        self.zone.vider()
+        table = self.zone.interieur
+        nb = monthrange(self.year, self.month)[1]
+        debut, fin = date(self.year, self.month, 1), date(self.year, self.month, nb)
+        elements = database.elements_pour_periode(debut, fin)
+        if not elements:
+            tk.Label(table, text="(aucun élément à nettoyer)", bg=config.COLOR_BG,
+                     fg=config.COLOR_MUTED, font=config.FONT_MED).grid(row=0, column=0,
+                                                                       pady=20)
+            return
+        faits = database.nettoyages_periode(debut, fin)
+        table.columnconfigure(0, minsize=self.LARGEUR_NOM)
+        for j in range(1, nb + 1):
+            table.columnconfigure(j, minsize=self.LARGEUR_JOUR)
+            tk.Label(table, text=str(j), bg=config.COLOR_BG, fg=config.COLOR_MUTED,
+                     font=config.FONT_SMALL).grid(row=0, column=j, sticky="nsew")
+        tk.Label(table, text="Élément", bg=config.COLOR_BG, fg=config.COLOR_MUTED,
+                 font=config.FONT_SMALL, anchor="w").grid(row=0, column=0, sticky="w")
+        for i, e in enumerate(elements, start=1):
+            tk.Label(table, text=e["nom"], bg=config.COLOR_CARD, fg=config.COLOR_FG,
+                     font=config.FONT_SMALL, anchor="w", wraplength=self.LARGEUR_NOM - 8,
+                     justify="left", padx=4, pady=8
+                     ).grid(row=i, column=0, sticky="nsew", pady=1)
+            for j in range(1, nb + 1):
+                fait = faits.get((e["id"], date(self.year, self.month, j).isoformat()))
+                tk.Label(table, text=fait["initiales"] if fait else "",
+                         bg=config.COLOR_CARD, fg=config.COLOR_SUCCESS,
+                         font=config.FONT_SMALL
+                         ).grid(row=i, column=j, sticky="nsew", padx=1, pady=1)
+        self.zone.actualiser()
+
+    def _export(self):
+        try:
+            path = pdf_export.export_nettoyage_pdf(self.year, self.month)
         except Exception as e:
             error(self, "Erreur export", str(e))
             return

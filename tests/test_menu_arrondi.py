@@ -21,6 +21,7 @@ class AppStub:
     def show_temperature(self): appels.append("temperature")
     def show_history(self): appels.append("historique")
     def show_settings(self): appels.append("parametres")
+    def show_nettoyage(self): appels.append("nettoyage")
 
 
 def touches(w):
@@ -58,14 +59,14 @@ assert attendre_reseau(m, True)
 print("1. style classique inchange, icone WiFi presente : OK")
 m.destroy()
 
-# 2. style arrondi : 3 cases + 2 boutons, memes couleurs que le classique
+# 2. style arrondi : 4 cases + 2 boutons, memes couleurs que le classique
 config.STYLE = "rounded"
 m = MainMenu(root, AppStub())
 root.update()
 cases = touches(m)
-assert len(cases) == 5, len(cases)
+assert len(cases) == 6, len(cases)
 assert all(hasattr(m, a) for a in ("usb_lbl", "clock_lbl", "alert", "wifi"))
-print("2. style arrondi : 3 cases + 2 boutons : OK")
+print("2. style arrondi : 4 cases + 2 boutons : OK")
 
 case = cases[0]
 ui_common._guard_until = 0.0            # pas de protection active pour ces essais
@@ -92,14 +93,14 @@ evt(case, "<ButtonRelease-1>", 900, 900)
 assert appels == ["reception"] and case.coords(texte)[1] == ty_avant
 print("5. relachement hors de la case : annule : OK")
 
-# 6. les 5 elements declenchent chacun leur action
+# 6. les 6 elements declenchent chacun leur action
 appels.clear()
 for e in cases:
     evt(e, "<ButtonPress-1>", 40, 30)
     evt(e, "<ButtonRelease-1>", 40, 30)
 assert sorted(appels) == sorted(
-    ["reception", "scan", "temperature", "historique", "parametres"]), appels
-print("6. les 5 elements declenchent chacun leur action : OK")
+    ["reception", "scan", "temperature", "nettoyage", "historique", "parametres"]), appels
+print("6. les 6 elements declenchent chacun leur action : OK")
 
 # 6b. zone morte : un appui sur le pourtour d'une case est ignore
 appels.clear()
@@ -119,9 +120,10 @@ print("6b. appui sur le pourtour ignore, juste a l'interieur pris en compte : OK
 
 # 6c. espacement : les cases sont bien separees de 28 px (>= 5 mm sur l'ecran)
 root.update()
-x_cases = sorted((c.winfo_x(), c.winfo_x() + c.winfo_width()) for c in cases[:3])
-ecarts = [x_cases[i + 1][0] - x_cases[i][1] for i in range(2)]
-assert ecarts == [28, 28], ecarts
+x_cases = sorted((c.winfo_x(), c.winfo_x() + c.winfo_width()) for c in cases[:4])
+ecarts = [x_cases[i + 1][0] - x_cases[i][1] for i in range(3)]
+assert ecarts == [28, 28, 28], ecarts
+assert x_cases[-1][1] <= config.SCREEN_W - 20, "la 4e case deborde de l'ecran"
 print(f"6c. espace entre les cases : {ecarts[0]} px : OK")
 
 # 7. icone WiFi : verte connecte, rouge barree deconnecte
