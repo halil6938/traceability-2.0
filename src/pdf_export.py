@@ -127,3 +127,56 @@ def export_month_pdf(year: int, month: int) -> Path | None:
 
     doc.build(story)
     return out_path
+
+
+def export_nettoyage_pdf(year: int, month: int) -> Path | None:
+    """Fiche de suivi du nettoyage et de la desinfection du mois, sur la cle
+    USB (meme presentation que la fiche papier). None si USB absente."""
+    base = usb_manager.usb_base_dir()
+    if base is None:
+        return None
+    nb = monthrange(year, month)[1]
+    debut, fin = date(year, month, 1), date(year, month, nb)
+    elements = database.elements_pour_periode(debut, fin)
+    faits = database.nettoyages_periode(debut, fin)
+
+    out_path = base / "exports" / f"nettoyage_{year}-{month:02d}.pdf"
+    doc = SimpleDocTemplate(str(out_path), pagesize=(A4[1], A4[0]),  # paysage
+                            leftMargin=20, rightMargin=20, topMargin=20, bottomMargin=20)
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph("<b>Fiche de suivi du nettoyage et de la désinfection — "
+                  f"{month:02d}/{year}</b>", styles["Title"]),
+        Paragraph(f"{_nom_magasin()} — édité le "
+                  f"{datetime.now().strftime('%d/%m/%Y à %H:%M')}", styles["Normal"]),
+        Spacer(1, 8),
+    ]
+    data = [["Surface / quoi"] + [str(j) for j in range(1, nb + 1)]]
+    for e in elements:
+        ligne = [e["nom"]]
+        for j in range(1, nb + 1):
+            fait = faits.get((e["id"], date(year, month, j).isoformat()))
+            ligne.append(fait["initiales"] if fait else "")
+        data.append(ligne)
+    largeur_jour = (A4[1] - 40 - 130) / nb
+    t = Table(data, colWidths=[130] + [largeur_jour] * nb, repeatRows=1)
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#8b5cf6")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 7),
+        ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    story.append(t)
+
+    # qui est qui : les initiales des operateurs de ce mois
+    ids = {f["operateur_id"] for f in faits.values()}
+    noms = [f"{o['initiales']} = {o['nom']}" for o in database.list_operateurs(True)
+            if o["id"] in ids]
+    if noms:
+        story.append(Spacer(1, 10))
+        story.append(Paragraph("Opérateurs : " + " ; ".join(noms), styles["Normal"]))
+    doc.build(story)
+    return out_path

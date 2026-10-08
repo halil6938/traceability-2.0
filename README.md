@@ -4,7 +4,7 @@ Application de traçabilité pour Raspberry Pi 3 (écran tactile 5" 800×480, **
 
 - 📷 **Scan ticket** : détection auto d'étiquettes blanches sur fond contrasté, capture automatique.
 - 🌡 **Relevés de température** : saisie tactile quotidienne par appareil (frigo/congélateur) avec alerte hors seuils. Capteurs **BLE** (Brifit WS07) et **WiFi Tuya** (lecture via le cloud Smart Life — nécessite des clés API sur iot.tuya.com ; ⚠ le plan gratuit « Trial » expire tous les 6 mois, à renouveler sur iot.tuya.com si les lectures WiFi tombent en erreur d'autorisation).
-- 📦 **Réception** : relevé de température des produits livrés par fournisseur, via thermomètre Bluetooth (pistolet IR HoldPeak HP-985C-APP) ou saisie manuelle.
+- 🚚 **Réception** : relevé de température des produits livrés par fournisseur, via thermomètre Bluetooth (pistolet IR HoldPeak HP-985C-APP) ou saisie manuelle.
 - 📊 **Historique** mensuel consultable et modifiable (tickets, températures, réceptions).
   Une réception oubliée se rattrape depuis **Historique ▸ Réceptions ▸ + Ajouter**
   (fournisseur, jour du mois affiché, température) ; chaque ligne est aussi
@@ -14,6 +14,14 @@ Application de traçabilité pour Raspberry Pi 3 (écran tactile 5" 800×480, **
   tant qu'une fenêtre (mesure, numpad, confirmation) est ouverte. Délais réglables
   à distance (`RECEPTION_INACTIVITY_S`, `SCAN_INACTIVITY_S`, `HISTORY_INACTIVITY_S`,
   `SETTINGS_INACTIVITY_S`).
+- ✨ **Nettoyage** (4e case du menu) : fiche de suivi du nettoyage et de la
+  désinfection. L'opérateur choisit son prénom, puis touche la case du jour des
+  éléments nettoyés : elle affiche ses initiales. Les 10 jours précédents sont
+  affichés à côté (lecture seule). Seul celui qui a coché peut décocher, le jour
+  même. Opérateurs et éléments se gèrent avec « ⚙ Gérer » (retirés = archivés,
+  les fiches passées restent complètes). Historique ▸ Nettoyage : fiche du mois
+  et export PDF (`nettoyage_AAAA-MM.pdf`). Retour au menu après 3 min sans
+  contact (`NETTOYAGE_INACTIVITY_S`) : l'opérateur suivant doit s'identifier.
 - 📄 **Export PDF** par mois sur clé USB (températures + réceptions), avec le nom
   du magasin (`NOM_MAGASIN`, réglable à distance). Les valeurs saisies à l'écran
   sont marquées d'un `*`, les réceptions au-dessus du maximum du fournisseur en rouge.

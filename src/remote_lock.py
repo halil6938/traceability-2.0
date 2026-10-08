@@ -75,11 +75,12 @@ def _texte(v):
 CONFIG_WHITELIST = {
     "COLOR_BG": _color, "COLOR_FG": _color, "COLOR_PRIMARY": _color,
     "COLOR_SUCCESS": _color, "COLOR_DANGER": _color, "COLOR_WARNING": _color,
-    "COLOR_CARD": _color, "COLOR_MUTED": _color,
+    "COLOR_CARD": _color, "COLOR_MUTED": _color, "COLOR_NETTOYAGE": _color,
     # retours automatiques au menu : de 30 s a 1 h
     "SCAN_INACTIVITY_S": _entre(30, 3600), "HISTORY_INACTIVITY_S": _entre(30, 3600),
     "SETTINGS_INACTIVITY_S": _entre(30, 3600),
     "RECEPTION_INACTIVITY_S": _entre(30, 3600),
+    "NETTOYAGE_INACTIVITY_S": _entre(30, 3600),
     "NUIT_INACTIVITE_S": _entre(300, 86400),
     "RECT_STABLE_FRAMES": _entre(1, 50),
     "STYLE": _style,

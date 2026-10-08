@@ -9,6 +9,7 @@ glisser le doigt ailleurs avant de relacher l'annule.
 """
 import hashlib
 import tkinter as tk
+import tkinter.font as tkfont
 
 from PIL import Image, ImageColor, ImageDraw, ImageTk
 
@@ -129,6 +130,19 @@ class _Touche(tk.Canvas):
             self._command()
 
 
+def police_titre(texte, largeur):
+    """Police du titre d'une grande case : la plus grande ou chaque mot tient
+    sur la largeur. Avec 4 cases, « température » en grand etait coupe en
+    plein mot (« températu-re »)."""
+    famille, _taille, *style = config.FONT_BIG
+    for taille in (20, 18, 16, 14, 12):
+        police = (famille, taille, *style)
+        mesure = tkfont.Font(font=police)
+        if all(mesure.measure(mot) <= largeur for mot in texte.split()):
+            return police
+    return police
+
+
 class Card(_Touche):
     """Grande case coloree : pictogramme, titre et sous-titre centres."""
 
@@ -139,7 +153,7 @@ class Card(_Touche):
                                  font=("DejaVu Sans", 48), anchor="n")
         y = self.bbox(icone)[3] + 2
         titre = self.create_text(cx, y, text=title, fill="white", anchor="n",
-                                 font=config.FONT_BIG, width=w - 10,
+                                 font=police_titre(title, w - 16), width=w - 10,
                                  justify="center")
         y = self.bbox(titre)[3] + 6
         self.create_text(cx, y, text=subtitle, fill="white", anchor="n",

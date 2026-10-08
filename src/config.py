@@ -45,6 +45,9 @@ HISTORY_INACTIVITY_S = 180        # retour auto au menu si aucun contact (Histor
 SETTINGS_INACTIVITY_S = 180       # retour auto au menu si aucun contact (Parametres)
 RECEPTION_INACTIVITY_S = 180      # retour auto au menu si aucun contact (Reception) :
                                   # libere le pistolet et laisse passer les mises a jour
+NETTOYAGE_INACTIVITY_S = 180      # retour auto au menu (Nettoyage) : l'operateur
+                                  # suivant devra s'identifier a nouveau
+NETTOYAGE_JOURS_PASSES = 10       # jours precedents affiches a cote d'aujourd'hui
 # La nuit, retour au menu de n'importe quel ecran apres ce delai sans contact :
 # un ecran Reception ou Releve laisse ouvert bloquerait sinon le releve
 # automatique de 3 h (Bluetooth reserve) et les mises a jour.
@@ -101,6 +104,7 @@ COLOR_DANGER = "#ef4444"
 COLOR_WARNING = "#f59e0b"
 COLOR_CARD = "#334155"
 COLOR_MUTED = "#94a3b8"
+COLOR_NETTOYAGE = "#8b5cf6"       # violet : 4e case du menu (Nettoyage)
 
 # Fonts
 FONT_TITLE = ("DejaVu Sans", 24, "bold")
