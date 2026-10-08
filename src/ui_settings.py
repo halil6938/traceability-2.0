@@ -155,6 +155,12 @@ class SettingsScreen(tk.Frame):
             commit = updater.current_version()[:7]
         except Exception:
             commit = ""
+        try:
+            essai = updater.branche()
+        except Exception:
+            essai = config.REPO_BRANCH
+        if essai != config.REPO_BRANCH:
+            commit = f"{commit or 'inconnue'} (essai : {essai})"
         return f"{remote_lock.device_id()}  ·  version {commit or 'inconnue'}"
 
     def _render(self):

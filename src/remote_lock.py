@@ -153,7 +153,8 @@ def cached_state():
     return locked, message, cfg
 
 
-_AUTHORIZED = {"locked": False, "message": "", "config": {}, "update": "auto"}
+_AUTHORIZED = {"locked": False, "message": "", "config": {}, "update": "auto",
+               "branche": ""}
 
 
 def _fetch():
@@ -186,6 +187,7 @@ def _fetch():
         "message": str(entry.get("message", "")),
         "config": entry.get("config") or {},
         "update": str(entry.get("update", "auto")),
+        "branche": str(entry.get("branche", "") or ""),
     }
 
 
@@ -216,15 +218,18 @@ def refresh():
     avant = (database.get_meta("remote_locked", "0"),
              database.get_meta("remote_lock_msg", "") or "",
              database.get_meta("remote_config", "") or "{}",
-             database.get_meta("remote_update", "") or "")
+             database.get_meta("remote_update", "") or "",
+             database.get_meta("remote_branch", "") or "")
     apres = ("1" if entry["locked"] else "0", entry["message"],
-             json.dumps(entry["config"]), entry["update"])
+             json.dumps(entry["config"]), entry["update"], entry.get("branche", ""))
     if apres != avant:
         # ecriture (carte SD) et journal uniquement quand quelque chose change
         for cle, valeur in zip(("remote_locked", "remote_lock_msg",
-                                "remote_config", "remote_update"), apres):
+                                "remote_config", "remote_update",
+                                "remote_branch"), apres):
             database.set_meta(cle, valeur)
-        logger.info("etat distant : locked=%s update=%s config=%s",
-                    entry["locked"], entry["update"], entry["config"])
+        logger.info("etat distant : locked=%s update=%s branche=%s config=%s",
+                    entry["locked"], entry["update"], entry.get("branche") or "-",
+                    entry["config"])
     apply_config(entry["config"])
     return entry["locked"], entry["message"]

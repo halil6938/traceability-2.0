@@ -11,10 +11,13 @@ Garde-fous (une mauvaise version poussee ne doit pas paralyser les magasins) :
     l'adopter ; en cas d'echec, retour automatique a la version precedente ;
   - pilotage par appareil depuis devices/<hostname>.json :
         "update": "auto" (defaut) | "now" (des que possible) | "off"
+        "branche": "<nom>" pour faire essayer une version a UN SEUL Pi
+                   (absent = la branche normale, config.REPO_BRANCH)
 
 Le redemarrage se fait en sortant en code d'erreur : systemd relance le
 service (Restart=on-failure). Aucun privilege sudo n'est necessaire.
 """
+import re
 import shutil
 import subprocess
 import sys
@@ -46,6 +49,17 @@ def mode():
     """Mode de mise a jour de cet appareil : auto | now | off."""
     value = (database.get_meta("remote_update", "") or "auto").strip().lower()
     return value if value in ("auto", "now", "off") else "auto"
+
+
+def branche():
+    """Branche suivie par cet appareil : celle demandee dans son fichier
+    devices/<hostname>.json (essai sur un seul Pi), sinon la branche normale.
+    Retirer la ligne "branche" fait revenir le Pi tout seul a la normale."""
+    value = (database.get_meta("remote_branch", "") or "").strip()
+    if value and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,99}", value) \
+            and ".." not in value:
+        return value
+    return config.REPO_BRANCH
 
 
 def current_version():
@@ -108,15 +122,18 @@ def check_available():
     a jour du CODE est disponible, sinon None."""
     if repo_ready() is None:
         return None
+    b = branche()
     try:
-        r = _git("fetch", "--quiet", "origin", config.REPO_BRANCH)
+        # refspec explicite : le clone ne suit que master, une autre branche
+        # n'aurait sinon jamais de origin/<branche>
+        r = _git("fetch", "--quiet", "origin", f"+refs/heads/{b}:refs/remotes/origin/{b}")
     except Exception as e:
         logger.info("verification impossible : %s", e)
         return None
     if r.returncode != 0:
         logger.info("fetch echoue : %s", r.stderr.strip()[:200])
         return None
-    target = _rev(f"origin/{config.REPO_BRANCH}")
+    target = _rev(f"origin/{b}")
     if not target:
         return None
     deployed = database.get_meta("deployed_commit", "") or _rev("HEAD")

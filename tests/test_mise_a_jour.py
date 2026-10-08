@@ -40,7 +40,9 @@ v1 = git("rev-parse", "HEAD", cwd=origin)
 # --- Pi : depot local + dossier de l'appli ---
 repo = home / "traceability-2.0"
 app = home / "traceability-app"
-subprocess.run(["git", "clone", "-q", str(origin), str(repo)], check=True)
+# comme sur le Pi : clone partiel qui ne suit que master
+subprocess.run(["git", "clone", "-q", "--depth", "50", "--branch", "master",
+                origin.as_uri(), str(repo)], check=True)
 copy_app(app)
 
 config.REPO_URL = str(origin)
@@ -109,6 +111,58 @@ print("   commit note sans redemarrage :",
       database.get_meta("deployed_commit", "")[:8], "(doit valoir", v4[:8] + ")")
 assert target is None, "un commit sans code ne doit pas redemarrer l'appli"
 assert database.get_meta("deployed_commit") == v4
+
+# --- 4. essai sur UN SEUL Pi : "branche" dans son fichier devices/ ---
+git("checkout", "-q", "-b", "essai", cwd=origin)
+(origin / "src" / "essai.py").write_text('MARQUEUR = "essai"\n', encoding="utf-8")
+git("add", "-A", cwd=origin)
+git("commit", "-qm", "version d'essai", cwd=origin)
+v_essai = git("rev-parse", "HEAD", cwd=origin)
+git("checkout", "-q", "master", cwd=origin)
+assert updater.check_available() is None, "un Pi normal ne doit pas voir l'essai"
+for mauvais in ("../x", "-x", "a b", "a..b"):
+    database.set_meta("remote_branch", mauvais)
+    assert updater.branche() == "master", mauvais
+database.set_meta("remote_branch", "essai")
+target = updater.check_available()
+print("\n4) Pi d'essai : version d'essai proposee :", (target or "aucune")[:8])
+assert target == v_essai
+assert updater.perform_update(target) and (app / "src" / "essai.py").exists()
+# fin de l'essai : la ligne "branche" est retiree -> retour a master tout seul
+database.set_meta("remote_branch", "")
+target = updater.check_available()
+print("   branche retiree : retour propose vers", (target or "aucune")[:8])
+assert target == v4
+assert updater.perform_update(target)
+assert database.get_meta("deployed_commit") == v4
+
+# le fichier devices/ transmet bien la branche (et rien si elle est absente)
+from src import remote_lock  # noqa: E402
+import json, urllib.request  # noqa: E401,E402
+
+
+class Rep:
+    def __init__(self, d):
+        self.d = json.dumps(d).encode()
+
+    def read(self):
+        return self.d
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        pass
+
+
+config.REMOTE_CONTROL_BASE = "https://exemple.invalid/devices"
+urllib.request.urlopen = lambda *a, **k: Rep({"update": "now", "branche": "essai"})
+remote_lock.refresh()
+assert updater.branche() == "essai"
+urllib.request.urlopen = lambda *a, **k: Rep({"update": "now"})
+remote_lock.refresh()
+assert updater.branche() == "master"
+print("   fichier devices/ : branche lue puis retiree : OK")
 
 print("\nlog de mise a jour :")
 log = config.LOG_DIR / "update.log"

@@ -250,6 +250,17 @@ Garde-fous — une mauvaise version ne doit pas paralyser les magasins :
 `auto` (défaut) · `now` (dès que possible, pour un correctif urgent) ·
 `off` (fige la version de ce client).
 
+**Essayer une nouveauté sur un seul Pi** : la publier sur une branche à part
+(ex. `essai-nettoyage`), puis ajouter dans le fichier de ce Pi seulement :
+
+```json
+{ "update": "now", "branche": "essai-nettoyage" }
+```
+Les autres Pi restent sur `master`. Essai concluant : fusionner la branche dans
+`master` puis retirer la ligne `branche`. Essai raté : retirer la ligne
+`branche`, le Pi revient tout seul à la version normale. Pendant l'essai, la
+ligne « version » des **Paramètres** affiche `(essai : <branche>)`.
+
 La version déployée et le nom du Pi sont affichés en bas de l'écran
 **Paramètres** (utile pour le support à distance).
 
