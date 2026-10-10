@@ -278,20 +278,32 @@ class App(tk.Tk):
 
     def _sauvegarde_tick(self):
         """Copie quotidienne de la base sur la cle USB, a partir de 2 h (ou des
-        que la cle est rebranchee). Faite en tache de fond."""
+        que la cle est rebranchee), et le 1er du mois, archive en PDF des
+        tableaux du mois ecoule (voir archives.py). Faite en tache de fond."""
+        from . import archives
         today = date.today().isoformat()
+        try:
+            a_archiver = bool(archives.mois_a_archiver())
+        except Exception:
+            a_archiver = False
+        a_sauver = database.get_meta("sauvegarde_date") != today
         if (datetime.now().hour >= 2 and not self._sauvegarde_en_cours
-                and database.get_meta("sauvegarde_date") != today
+                and (a_sauver or a_archiver)
                 and usb_manager.find_usb_mount() is not None):
             self._sauvegarde_en_cours = True
 
             def faire():
                 from . import sauvegarde
                 try:
-                    if sauvegarde.sauvegarder() is not None:
+                    if a_sauver and sauvegarde.sauvegarder() is not None:
                         database.set_meta("sauvegarde_date", today)
                 except Exception as e:
                     sauvegarde.logger.warning("sauvegarde impossible : %s", e)
+                try:
+                    if a_archiver:
+                        archives.archiver_en_attente()
+                except Exception as e:
+                    archives.logger.warning("archive mensuelle impossible : %s", e)
                 finally:
                     self._sauvegarde_en_cours = False
 
