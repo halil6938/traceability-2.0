@@ -70,10 +70,15 @@ assert len(faits) == 9, faits
 assert database.get_meta("archive_mois") == "2026-12"
 print("3. mois manques rattrapes (changement d'annee compris) : OK")
 
-# 4. premiere mise en service : seulement le mois ecoule, pas tout l'historique
+# 4. premiere fois : tous les mois depuis la premiere donnee du Pi
 database.set_meta("archive_mois", "")
-assert archives.mois_a_archiver(date(2027, 3, 1)) == [(2027, 2)]
-print("4. premiere fois : seulement le mois ecoule : OK")
+assert archives.mois_a_archiver(date(2026, 12, 1)) == [(2026, 9), (2026, 10), (2026, 11)]
+database.save_reception(bigard["id"], 3.0, datetime(2026, 6, 11, 8, 0))   # mise en service
+assert database.premiere_donnee() == date(2026, 6, 11)
+assert archives.mois_a_archiver(date(2026, 10, 1)) == [(2026, 6), (2026, 7), (2026, 8),
+                                                     (2026, 9)]
+assert len(archives.mois_a_archiver(date(2028, 1, 1))) == archives.MAX_RATTRAPAGE
+print("4. premiere fois : tout l'historique depuis la mise en service : OK")
 
 # 5. l'export manuel (Historique) est inchange : releves + receptions, dans exports/
 from src import pdf_export  # noqa: E402
@@ -99,7 +104,7 @@ usb_manager.find_usb_mount = lambda: cle.parent
 database.set_meta("archive_mois", "")
 database.set_meta("sauvegarde_date", date.today().isoformat())   # deja sauvegarde
 attendu = archives.mois_a_archiver()
-assert len(attendu) == 1
+assert len(attendu) >= 2, attendu       # tout l'historique depuis juin 2026
 config.SCREEN_OFF_S = 0
 database.set_meta("setup_done", "1")
 app = ui_main.App()
@@ -109,8 +114,8 @@ fin = time.time() + 30
 while time.time() < fin and archives.mois_a_archiver():
     app.update()
     time.sleep(0.05)
-a, m = attendu[0]
-assert (cle / "nettoyage" / f"nettoyage_{a}-{m:02d}.pdf").exists(), \
+assert all((cle / "nettoyage" / f"nettoyage_{a}-{m:02d}.pdf").exists()
+           for a, m in attendu), \
     "la tache de nuit n'a pas fait l'archive"
 app.destroy()
 print("6. appli : archive faite par la tache de nuit (cle branchee, apres 2 h) : OK")

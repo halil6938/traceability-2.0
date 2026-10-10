@@ -352,6 +352,8 @@ enregistrés en PDF sur la clé, un dossier par élément, un fichier par mois :
 `temperatures/temperatures_AAAA-MM.pdf`, `receptions/receptions_AAAA-MM.pdf`,
 `nettoyage/nettoyage_AAAA-MM.pdf`. Clé absente ou Pi éteint ce jour-là : c'est
 fait dès que possible ensuite, et les mois manqués sont rattrapés (12 au plus).
+La première fois, tous les mois depuis la mise en service du Pi sont
+enregistrés (12 derniers au plus).
 
 ### Sauvegarde et restauration de la base
 

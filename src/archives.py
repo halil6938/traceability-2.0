@@ -8,7 +8,9 @@ enregistres en PDF, un dossier par element, un fichier par mois :
     traceability/nettoyage/nettoyage_2026-09.pdf
 
 Si la cle est absente ou le Pi eteint le 1er, l'archive est faite des que
-possible ensuite, et les mois manques sont rattrapes (12 au plus).
+possible ensuite, et les mois manques sont rattrapes (12 au plus). La
+premiere fois, tous les mois depuis la premiere donnee du Pi sont enregistres
+(12 derniers au plus).
 """
 from datetime import date
 
@@ -33,7 +35,10 @@ def mois_a_archiver(aujourd_hui=None):
         a, m = (int(x) for x in fait.split("-"))
         deja = (a, m)
     except ValueError:
-        deja = _precedent(*dernier)      # premiere fois : seulement le mois ecoule
+        # premiere fois : tout l'historique, depuis la premiere donnee du Pi
+        premiere = database.premiere_donnee()
+        deja = (_precedent(premiere.year, premiere.month) if premiere
+                else _precedent(*dernier))
     mois = []
     courant = dernier
     while courant > deja and len(mois) < MAX_RATTRAPAGE:

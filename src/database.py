@@ -396,6 +396,18 @@ def receptions_on(day: date):
         return [dict(r) for r in rows]
 
 
+def premiere_donnee():
+    """Date de la plus ancienne donnee sanitaire (releve, reception ou
+    nettoyage), ou None si la base est vide."""
+    with connect() as c:
+        dates = [c.execute(q).fetchone()[0] for q in (
+            "SELECT MIN(reading_date) FROM readings",
+            "SELECT MIN(substr(created_at, 1, 10)) FROM receptions",
+            "SELECT MIN(jour) FROM nettoyages")]
+    dates = [d for d in dates if d]
+    return date.fromisoformat(min(dates)) if dates else None
+
+
 def receptions_in_range(start: date, end: date):
     """Receptions entre start et end inclus, plus recentes en premier."""
     with connect() as c:
