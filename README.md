@@ -342,7 +342,16 @@ Si le nom n'a pas été défini au flashage : `bash tools/set_client.sh boucheri
   clé USB est vérifiée sans y écrire, et rien n'est réécrit en base si rien n'a
   changé : moins d'usure de la clé et de la carte SD.
 - **Clé USB** (`/media/pi/<VOLUME>/traceability/`) : photos (`photos/YYYY-MM/…jpg`), exports PDF (`exports/`),
-  **sauvegardes de la base** (`sauvegardes/config_AAAA-MM-JJ.db`).
+  **sauvegardes de la base** (`sauvegardes/config_AAAA-MM-JJ.db`), et les
+  **tableaux mensuels** : `temperatures/`, `receptions/`, `nettoyage/`.
+
+### Tableaux mensuels sur la clé
+
+Le **1er de chaque mois** (à partir de 2 h), les tableaux du mois écoulé sont
+enregistrés en PDF sur la clé, un dossier par élément, un fichier par mois :
+`temperatures/temperatures_AAAA-MM.pdf`, `receptions/receptions_AAAA-MM.pdf`,
+`nettoyage/nettoyage_AAAA-MM.pdf`. Clé absente ou Pi éteint ce jour-là : c'est
+fait dès que possible ensuite, et les mois manqués sont rattrapés (12 au plus).
 
 ### Sauvegarde et restauration de la base
 

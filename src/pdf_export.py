@@ -11,15 +11,27 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from . import config, database, remote_lock, usb_manager
 
 
+def _dossier_sortie(dossier):
+    """Dossier ou ecrire le PDF : celui demande (archives mensuelles), sinon
+    exports/ sur la cle. None si aucune cle n'est branchee."""
+    if dossier is not None:
+        return dossier
+    base = usb_manager.usb_base_dir()
+    return None if base is None else base / "exports"
+
+
 def _nom_magasin():
     """Nom imprime en tete du PDF (reglable a distance), sinon nom du Pi."""
     return config.NOM_MAGASIN or remote_lock.device_id()
 
 
-def export_month_pdf(year: int, month: int) -> Path | None:
-    """Exporte le tableau mensuel sur la cle USB. Retourne le chemin, ou None si USB absente."""
-    base = usb_manager.usb_base_dir()
-    if base is None:
+def export_month_pdf(year: int, month: int, dossier=None,
+                     avec_receptions=True) -> Path | None:
+    """Exporte le tableau mensuel sur la cle USB. Retourne le chemin, ou None si USB absente.
+    avec_receptions=False : temperatures seules (archives mensuelles, ou les
+    receptions ont leur propre PDF)."""
+    sortie = _dossier_sortie(dossier)
+    if sortie is None:
         return None
 
     start = date(year, month, 1)
@@ -36,7 +48,8 @@ def export_month_pdf(year: int, month: int) -> Path | None:
             matrix[r["device_id"]][r["reading_date"]] = (
                 r["temperature"], r["temp_min"], r["temp_max"], r.get("source"))
 
-    out_path = base / "exports" / f"releves_{year}-{month:02d}.pdf"
+    nom = "releves" if avec_receptions else "temperatures"
+    out_path = sortie / f"{nom}_{year}-{month:02d}.pdf"
 
     doc = SimpleDocTemplate(str(out_path), pagesize=(A4[1], A4[0]),  # paysage
                             leftMargin=20, rightMargin=20, topMargin=20, bottomMargin=20)
@@ -90,57 +103,92 @@ def export_month_pdf(year: int, month: int) -> Path | None:
         styles["Italic"]))
 
     # --- Section receptions ---
-    receptions = database.receptions_in_range(start, end)
+    receptions = database.receptions_in_range(start, end) if avec_receptions else []
     if receptions:
         story.append(Spacer(1, 20))
         story.append(Paragraph(
             f"<b>Réceptions — {month:02d}/{year}</b>", styles["Heading2"]))
         story.append(Spacer(1, 6))
-
-        rdata = [["Date", "Heure", "Fournisseur", "Température (°C)", "Max accepté"]]
-        hors = []
-        for i, r in enumerate(reversed(receptions), start=1):  # ordre chronologique
-            dt = datetime.fromisoformat(r["created_at"])
-            tmax = r.get("supplier_temp_max")
-            rdata.append([dt.strftime("%d/%m/%Y"), dt.strftime("%H:%M"),
-                          r["supplier_name"], f"{r['temperature']:g}",
-                          f"{tmax:g}" if tmax is not None else "—"])
-            if database.reception_hors_seuil(r):
-                hors.append(i)
-
-        rt = Table(rdata, colWidths=[90, 60, 260, 110, 80], repeatRows=1)
-        style_r = TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f59e0b")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, -1), 8),
-            ("ALIGN", (3, 1), (4, -1), "CENTER"),
-            ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ])
-        for ligne in hors:              # au-dessus du maximum du fournisseur
-            style_r.add("BACKGROUND", (3, ligne), (3, ligne), colors.HexColor("#fee2e2"))
-            style_r.add("TEXTCOLOR", (3, ligne), (3, ligne), colors.HexColor("#b91c1c"))
-            style_r.add("FONTNAME", (3, ligne), (3, ligne), "Helvetica-Bold")
-        rt.setStyle(style_r)
-        story.append(rt)
+        story.append(_tableau_receptions(receptions))
 
     doc.build(story)
     return out_path
 
 
-def export_nettoyage_pdf(year: int, month: int) -> Path | None:
+def _tableau_receptions(receptions):
+    """Tableau des receptions, temperatures hors seuil en rouge."""
+    rdata = [["Date", "Heure", "Fournisseur", "Température (°C)", "Max accepté"]]
+    hors = []
+    for i, r in enumerate(reversed(receptions), start=1):  # ordre chronologique
+        dt = datetime.fromisoformat(r["created_at"])
+        tmax = r.get("supplier_temp_max")
+        rdata.append([dt.strftime("%d/%m/%Y"), dt.strftime("%H:%M"),
+                      r["supplier_name"], f"{r['temperature']:g}",
+                      f"{tmax:g}" if tmax is not None else "—"])
+        if database.reception_hors_seuil(r):
+            hors.append(i)
+
+    rt = Table(rdata, colWidths=[80, 50, 235, 110, 80], repeatRows=1)
+    style_r = TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f59e0b")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("ALIGN", (3, 1), (4, -1), "CENTER"),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ])
+    for ligne in hors:              # au-dessus du maximum du fournisseur
+        style_r.add("BACKGROUND", (3, ligne), (3, ligne), colors.HexColor("#fee2e2"))
+        style_r.add("TEXTCOLOR", (3, ligne), (3, ligne), colors.HexColor("#b91c1c"))
+        style_r.add("FONTNAME", (3, ligne), (3, ligne), "Helvetica-Bold")
+    rt.setStyle(style_r)
+    return rt
+
+
+def export_receptions_pdf(year: int, month: int, dossier=None) -> Path | None:
+    """Receptions de marchandise du mois, dans un PDF a part."""
+    sortie = _dossier_sortie(dossier)
+    if sortie is None:
+        return None
+    start = date(year, month, 1)
+    end = date(year, month, monthrange(year, month)[1])
+    receptions = database.receptions_in_range(start, end)
+    out_path = sortie / f"receptions_{year}-{month:02d}.pdf"
+    doc = SimpleDocTemplate(str(out_path), pagesize=A4,
+                            leftMargin=20, rightMargin=20, topMargin=20, bottomMargin=20)
+    styles = getSampleStyleSheet()
+    story = [
+        Paragraph(f"<b>Réceptions de marchandise — {month:02d}/{year}</b>",
+                  styles["Title"]),
+        Paragraph(f"{_nom_magasin()} — édité le "
+                  f"{datetime.now().strftime('%d/%m/%Y à %H:%M')}", styles["Normal"]),
+        Spacer(1, 8),
+    ]
+    if receptions:
+        story.append(_tableau_receptions(receptions))
+        story.append(Spacer(1, 10))
+        story.append(Paragraph("En rouge : température au-dessus du maximum "
+                               "accepté pour ce fournisseur.", styles["Italic"]))
+    else:
+        story.append(Paragraph("Aucune réception enregistrée ce mois-ci.",
+                               styles["Normal"]))
+    doc.build(story)
+    return out_path
+
+
+def export_nettoyage_pdf(year: int, month: int, dossier=None) -> Path | None:
     """Fiche de suivi du nettoyage et de la desinfection du mois, sur la cle
     USB (meme presentation que la fiche papier). None si USB absente."""
-    base = usb_manager.usb_base_dir()
-    if base is None:
+    sortie = _dossier_sortie(dossier)
+    if sortie is None:
         return None
     nb = monthrange(year, month)[1]
     debut, fin = date(year, month, 1), date(year, month, nb)
     elements = database.elements_pour_periode(debut, fin)
     faits = database.nettoyages_periode(debut, fin)
 
-    out_path = base / "exports" / f"nettoyage_{year}-{month:02d}.pdf"
+    out_path = sortie / f"nettoyage_{year}-{month:02d}.pdf"
     doc = SimpleDocTemplate(str(out_path), pagesize=(A4[1], A4[0]),  # paysage
                             leftMargin=20, rightMargin=20, topMargin=20, bottomMargin=20)
     styles = getSampleStyleSheet()
